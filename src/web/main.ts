@@ -749,13 +749,25 @@ function renderFullBoardGrid(board: Board): HTMLElement {
 
       const key = `${r},${c}`;
       const cs = cellStatuses.get(key);
-      const classes: string[] = [];
+      const classes: string[] = ['cell-clickable'];
+      const isMine = mineSet.has(owner.toLowerCase());
 
       if (cs?.isWinner) classes.push('cell-winner');
       else if (cs && cs.nearMisses.length > 0) classes.push('cell-near');
-      if (mineSet.has(owner.toLowerCase())) classes.push('cell-mine');
+      if (isMine) classes.push('cell-mine');
 
-      if (classes.length > 0) td.className = classes.join(' ');
+      td.className = classes.join(' ');
+      td.addEventListener('click', () => {
+        if (!owner) return;
+        const lc = owner.toLowerCase();
+        if (mineSet.has(lc)) {
+          fb.mySquareNames = fb.mySquareNames.filter(n => n.toLowerCase() !== lc);
+        } else {
+          fb.mySquareNames.push(owner);
+        }
+        saveToLocalStorage();
+        render();
+      });
       tr.appendChild(td);
     }
     tbody.appendChild(tr);

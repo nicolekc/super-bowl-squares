@@ -379,6 +379,17 @@ body {
   text-decoration: underline;
 }
 
+.cell-clickable {
+  cursor: pointer;
+  user-select: none;
+  transition: outline 0.1s;
+}
+
+.cell-clickable:hover {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
 /* ── Status text rows ──────────────────────────────────── */
 
 .square-list {
