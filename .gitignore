@@ -1,2 +1,4 @@
-# Ralph logs (iteration transcripts for debugging)
-ralph-logs/
+node_modules/
+dist/
+bin/squares.js
+*.tsbuildinfo
