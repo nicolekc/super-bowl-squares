@@ -359,6 +359,7 @@ async function scoringLoop(boards: Board[]) {
   console.log(c.dim('  Two numbers (e.g., "14 7") to update score'));
   console.log(c.dim('  "q" or "quarter" to advance quarter'));
   console.log(c.dim('  "add" to add more boards'));
+  console.log(c.dim('  "mine" to set which squares you\'re tracking on a full board'));
   console.log(c.dim('  "save" to print board data for saving'));
   console.log(c.dim('  "exit" or "quit" to exit'));
 
@@ -401,6 +402,37 @@ async function scoringLoop(boards: Board[]) {
         boards.push(...newBoards);
         console.log(c.green(`Added ${newBoards.length} board(s) (${boards.length} total)`));
       }
+      displayAllBoards(boards, state);
+      continue;
+    }
+
+    if (input === 'mine') {
+      const fullBoards = boards
+        .map((b, i) => ({ b, i }))
+        .filter(({ b }) => b.fullBoard);
+      if (fullBoards.length === 0) {
+        console.log(c.yellow('No full boards loaded. "mine" only works with full boards.'));
+        continue;
+      }
+      let target: { b: Board; i: number };
+      if (fullBoards.length === 1) {
+        target = fullBoards[0];
+      } else {
+        console.log('Which board?');
+        fullBoards.forEach(({ b, i }) => console.log(`  ${i + 1}. ${b.config.name}`));
+        const choice = await ask('Board #: ');
+        const idx = parseInt(choice) - 1;
+        const found = fullBoards.find(({ i }) => i === idx);
+        if (!found) { console.log(c.red('Invalid choice.')); continue; }
+        target = found;
+      }
+      console.log(`Current: ${target.b.fullBoard!.mySquareNames.join(', ') || '(none)'}`);
+      const names = await ask('Your names (comma-separated): ');
+      target.b.fullBoard!.mySquareNames = names
+        .split(',')
+        .map(n => n.trim())
+        .filter(n => n.length > 0);
+      console.log(c.green(`Tracking: ${target.b.fullBoard!.mySquareNames.join(', ')}`));
       displayAllBoards(boards, state);
       continue;
     }

@@ -631,12 +631,39 @@ function renderBoardCard(board: Board): HTMLElement {
 
   if (board.fullBoard) {
     card.appendChild(renderFullBoardGrid(board));
+    card.appendChild(renderMineEditor(board));
     card.appendChild(renderFullBoardSummary(board));
   } else if (board.mySquares) {
     card.appendChild(renderMySquaresList(board));
   }
 
   return card;
+}
+
+// ── Mine Editor ──────────────────────────────────────────────────────
+
+function renderMineEditor(board: Board): HTMLElement {
+  const fb = board.fullBoard!;
+  const row = el('div', 'form-row mt-1 mine-editor');
+  row.appendChild(el('label', 'text-sm', ['Mine:']));
+  const mineInput = input('text', {
+    placeholder: 'Your names, comma-separated',
+    className: 'mine-input',
+    value: fb.mySquareNames.join(', '),
+  });
+  mineInput.style.flex = '1';
+  const updateBtn = btn('Set', 'btn btn-secondary btn-sm', () => {
+    fb.mySquareNames = mineInput.value
+      .split(',')
+      .map(n => n.trim())
+      .filter(n => n.length > 0);
+    saveToLocalStorage();
+    render();
+    showToast('Updated tracked squares');
+  });
+  row.appendChild(mineInput);
+  row.appendChild(updateBtn);
+  return row;
 }
 
 // ── My Squares List ───────────────────────────────────────────────────
