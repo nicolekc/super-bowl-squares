@@ -332,10 +332,52 @@ function repeat(ch: string, n: number): string {
 
 // ── Display all boards ─────────────────────────────────
 
+function displayDigitSummary(boards: Board[], state: GameState) {
+  let any = false;
+  for (const board of boards) {
+    const qi = quarterIndex(board, state.quarter);
+    const topDigits = new Set<number>();
+    const leftDigits = new Set<number>();
+
+    if (board.mySquares && board.mySquares.length > 0) {
+      for (const sq of board.mySquares) {
+        const d = sq.quarters[qi];
+        for (const n of d.topDigits) topDigits.add(n);
+        for (const n of d.leftDigits) leftDigits.add(n);
+      }
+    } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
+      const fb = board.fullBoard;
+      const qn = fb.quarters[qi];
+      const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
+      for (let r = 0; r < board.config.rows; r++) {
+        for (let col = 0; col < board.config.cols; col++) {
+          const owner = fb.grid[r]?.[col] ?? '';
+          if (mineSet.has(owner.toLowerCase())) {
+            for (const n of qn.topNumbers[col]) topDigits.add(n);
+            for (const n of qn.leftNumbers[r]) leftDigits.add(n);
+          }
+        }
+      }
+    }
+
+    if (topDigits.size === 0 && leftDigits.size === 0) continue;
+    if (!any) {
+      console.log(c.dim('  My Digits This Quarter:'));
+      any = true;
+    }
+    const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
+    console.log(c.bold(`  ${board.config.name}`));
+    console.log(`    ${board.config.topTeam}: ${c.cyan('[' + sorted(topDigits).join(', ') + ']')}`);
+    console.log(`    ${board.config.leftTeam}: ${c.cyan('[' + sorted(leftDigits).join(', ') + ']')}`);
+  }
+}
+
 function displayAllBoards(boards: Board[], state: GameState) {
   const ql = quarterLabel(state.quarter);
   console.log('');
   console.log(c.bold(c.cyan(`  ${ql} | ${boards[0]?.config.topTeam ?? 'Team1'} ${state.score.top} - ${boards[0]?.config.leftTeam ?? 'Team2'} ${state.score.left}`)));
+
+  displayDigitSummary(boards, state);
 
   for (const board of boards) {
     if (board.fullBoard) {

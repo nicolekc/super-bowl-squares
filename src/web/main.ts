@@ -528,11 +528,72 @@ function renderScoringPanel(): HTMLElement {
   const panel = el('div', 'scoring-panel');
   panel.appendChild(renderScoringHeader());
 
+  const digitSummary = renderDigitSummary();
+  if (digitSummary) panel.appendChild(digitSummary);
+
   for (const board of boards) {
     panel.appendChild(renderBoardCard(board));
   }
 
   return panel;
+}
+
+// ── Digit Summary ──────────────────────────────────────────────────────
+
+function renderDigitSummary(): HTMLElement | null {
+  const items: HTMLElement[] = [];
+
+  for (const board of boards) {
+    const qi = quarterIndex(board, gameState.quarter);
+    const topDigits = new Set<number>();
+    const leftDigits = new Set<number>();
+
+    if (board.mySquares && board.mySquares.length > 0) {
+      for (const sq of board.mySquares) {
+        const d = sq.quarters[qi];
+        for (const n of d.topDigits) topDigits.add(n);
+        for (const n of d.leftDigits) leftDigits.add(n);
+      }
+    } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
+      const fb = board.fullBoard;
+      const qn = fb.quarters[qi];
+      const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
+      for (let r = 0; r < board.config.rows; r++) {
+        for (let c = 0; c < board.config.cols; c++) {
+          const owner = fb.grid[r]?.[c] ?? '';
+          if (mineSet.has(owner.toLowerCase())) {
+            for (const n of qn.topNumbers[c]) topDigits.add(n);
+            for (const n of qn.leftNumbers[r]) leftDigits.add(n);
+          }
+        }
+      }
+    }
+
+    if (topDigits.size === 0 && leftDigits.size === 0) continue;
+
+    const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
+    const item = el('div', 'digit-summary-board', [
+      el('div', 'digit-summary-name', [board.config.name]),
+      el('div', 'digit-summary-row', [
+        el('span', 'digit-summary-team', [board.config.topTeam + ':']),
+        el('span', 'digit-summary-digits', ['[' + sorted(topDigits).join(', ') + ']']),
+      ]),
+      el('div', 'digit-summary-row', [
+        el('span', 'digit-summary-team', [board.config.leftTeam + ':']),
+        el('span', 'digit-summary-digits', ['[' + sorted(leftDigits).join(', ') + ']']),
+      ]),
+    ]);
+    items.push(item);
+  }
+
+  if (items.length === 0) return null;
+
+  const section = el('div', 'digit-summary');
+  section.appendChild(el('div', 'digit-summary-title', ['My Digits This Quarter']));
+  const grid = el('div', 'digit-summary-grid');
+  for (const item of items) grid.appendChild(item);
+  section.appendChild(grid);
+  return section;
 }
 
 // ── Scoring Header ────────────────────────────────────────────────────
@@ -839,9 +900,93 @@ function renderFullBoardSummary(board: Board): HTMLElement {
   return summary;
 }
 
+// ── Default Boards ────────────────────────────────────────────────────
+
+const DEFAULT_BOARDS = `PrintYourBrackets 10x10 full
+Seahawks (top) vs Patriots (left)
+Top Seahawks 3 0 7 4 2 9 1 5 8 6
+Left Patriots 8 2 7 0 4 3 6 1 9 5
+Jason D, Rick RBD, Bup, Judy Gibson, Andy, Hoss, JR, Wendy Dowland, Jaron Pagzant, Colton S.
+Angler, Dirty Doug, Ryder, Mitz, Deb B, Todd Cordova, Jason D, Chari, Lance, Cliff Heather
+Casey Shofield, Alec B, Jaron Pagzant, Ryo, Lukas Gadd, Todd Moser, Karen Wiet, Shannon, Cooper, Curt
+JR, Tom Dowland, RC, BW Wolf, Chari, Linda Greg, Eric Molly, Curt, Milia Jackson, Ryder
+Lance, Ryo Cousin, Mitz Bryant, Jason D, Briana B, Shayne Westberg, Tyson, Lyuba Gadd, Angler, Bup
+Logan Gadd, Chari, Curt, Tenley Thompson, Bob T, Dave B, JR, Lance, Tine Arlene, Curt
+Bup, Greg Diane, Cooper, Janean Dowland, Aaron Wiet, Jimmy Burke, Chari, Ryo, Andy, Mike Sonya
+Terri Savitsky, Lance, JR, Blackthorse, Christina, Curt, Rick Murphy, Jason, Todd Cordova, Shannon
+Curt, Jason D, Chari, Brooke Shofield, Bup, Jaron Pagzant, Jimmy Burke, Hoss, Ryo Captain, Eric B
+Nathan Dowland, Shannon, Tammy Westberg, Lance, RC, Dirty Doug, Isaac S, Curt, JR, Turbo
+---
+Super Bowl LX $25 5x10 full
+New England Patriots (top) vs Seattle Seahawks (left)
+Top New England Patriots 65 72 49 30 81
+Left Seattle Seahawks 4 2 8 7 3 9 5 1 0 6
+Smash, BroncosMom, Mitsman, Poppy, caron
+Wsnider, nicolekc, Daniel Monto, Habolos, Poppy
+Purple Peopl, The Blaz, SEAHAWKS!, King, Meredith
+Purple Peopl, Habolos, King, Beau's, Nik
+Wiet, SEAHAWKS!, Meredith, The Blaz, nicolekc
+Brad, Wiet, Stupit Picks, Steve H, Dipped-In-Sa
+Beau's, Tina, Wiet, Ron O., Tomeki
+Brad, Kim E, Nik, TenTen10, Brad
+Dylan, Mama Petie, Dipped-In-Sa, Smash, TenTen10
+Takeo, Nik, caron, Tasha, Beau's
+---
+Super Bowl LX $50 5x5 reroll full
+New England Patriots (top) vs Seattle Seahawks (left)
+Q1 Top 86 71 30 45 92, Left 16 97 04 52 83
+Q2 Top 45 90 32 76 18, Left 95 76 38 21 04
+Q3 Top 19 47 36 05 28, Left 12 80 74 93 65
+Q4 Top 47 93 05 82 16, Left 06 84 59 23 17
+Smash, King, Mitsman, Tomeki, Meredith
+Amber, Wiet, The Blaz, nicolekc, Beau's
+Wsnider, Purple Peopl, SEAHAWKS!, Stupit Picks, Steve H
+Tina, The Blaz, Beau's, Habolos, Mama Petie
+Takeo, Dylan, Nik, Brad, BroncosMom
+---
+Super Bowl LX $50 5x5 full
+New England Patriots (top) vs Seattle Seahawks (left)
+Top New England Patriots 02 17 36 85 49
+Left Seattle Seahawks 64 15 72 89 30
+Nik, Takeo, Purple Peopl, Wsnider, Beau's
+Eric, The Blaz, Tasha, Wiet, Dipped-In-Sa
+Mitsman, Tina, Stupit Picks, The Blaz, Habolos
+Ron O., Tomeki, King, Steve H, Mama Petie
+Smash, SEAHAWKS!, Beau's, Meredith, nicolekc
+---
+Super Bowl LX $10 10x10 full
+New England Patriots (top) vs Seattle Seahawks (left)
+Top New England Patriots 9 3 6 0 7 5 4 2 8 1
+Left Seattle Seahawks 4 5 8 3 7 6 0 9 2 1
+Smash, BroncosMom, BroncosMom, Beau's, caron, Eric, Meredith, Mitsman, Nik, SEAHAWKS!
+Beau's, Wiet, TenTen10, nicolekc, Purple Peopl, Stupit Picks, caron, Nik, Habolos, Kim E
+SEAHAWKS!, Habolos, Wiet, TenTen10, peteschaf, Purple Peopl, Daniel Monto, winthatdough, King, caron
+caron, Meredith, Stupit Picks, Wiet, TenTen10, SEAHAWKS!, Purple Peopl, King, Mama Petie, Wsnider
+peteschaf, nicolekc, Tina, Purple Peopl, Wiet, TenTen10, The Blaz, nicolekc, Mama Petie, Poppy
+winthatdough, Mitsman, The Blaz, Purple Peopl, King, Wiet, TenTen10, Habolos, SEAHAWKS!, Poppy
+Mitsman, Beau's, Habolos, The Blaz, Jodi, King, Mama Petie, Meredith, Smash, Nik
+Tasha, Kim E, SEAHAWKS!, nicolekc, Stupit Picks, The Blaz, winthatdough, Beau's, Smash, Nik
+Habolos, Ron O., Beau's, King, Mitsman, Steve H, The Blaz, nicolekc, Meredith, Mama Petie
+Smash, Nik, Meredith, caron, Steve H, Tasha, peteschaf, BroncosMom, Poppy, Poppy`;
+
 // ── Initialize ────────────────────────────────────────────────────────
 
 function init(): void {
+  // Load from localStorage if available, otherwise use default boards
+  const saved = loadFromLocalStorage();
+  if (saved) {
+    try {
+      boards = parseBoards(saved);
+      activeTab = 'scoring';
+    } catch {
+      // Fall through to defaults
+    }
+  }
+  if (boards.length === 0) {
+    boards = parseBoards(DEFAULT_BOARDS);
+    saveToLocalStorage();
+    activeTab = 'scoring';
+  }
   render();
 }
 

@@ -296,6 +296,61 @@ body {
   color: var(--muted);
 }
 
+/* ── Digit Summary ────────────────────────────────────── */
+
+.digit-summary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.digit-summary-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+.digit-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.digit-summary-board {
+  flex: 1;
+  min-width: 10rem;
+}
+
+.digit-summary-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.digit-summary-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.digit-summary-team {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  min-width: 5rem;
+}
+
+.digit-summary-digits {
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
 /* ── Board Card ────────────────────────────────────────── */
 
 .board-card {
