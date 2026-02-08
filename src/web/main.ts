@@ -214,7 +214,22 @@ function renderPasteSection(): HTMLElement {
   section.appendChild(ta);
 
   const row = el('div', 'form-row mt-1');
-  row.appendChild(btn('Load Boards', 'btn btn-primary', () => {
+  row.appendChild(btn('Add Boards', 'btn btn-primary', () => {
+    const val = ta.value.trim();
+    if (!val) { showToast('Paste board data first'); return; }
+    try {
+      const newBoards = parseBoards(val);
+      boards.push(...newBoards);
+      saveToLocalStorage();
+      ta.value = '';
+      if (boards.length === newBoards.length) activeTab = 'scoring';
+      render();
+      showToast(`Added ${newBoards.length} board(s) (${boards.length} total)`);
+    } catch (e: any) {
+      showToast('Parse error: ' + e.message);
+    }
+  }));
+  row.appendChild(btn('Replace All', 'btn btn-secondary', () => {
     const val = ta.value.trim();
     if (!val) { showToast('Paste board data first'); return; }
     try {
@@ -222,7 +237,7 @@ function renderPasteSection(): HTMLElement {
       saveToLocalStorage();
       activeTab = 'scoring';
       render();
-      showToast(`Loaded ${boards.length} board(s)`);
+      showToast(`Replaced with ${boards.length} board(s)`);
     } catch (e: any) {
       showToast('Parse error: ' + e.message);
     }

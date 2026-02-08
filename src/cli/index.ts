@@ -358,6 +358,8 @@ async function scoringLoop(boards: Board[]) {
   console.log(c.dim('Commands:'));
   console.log(c.dim('  Two numbers (e.g., "14 7") to update score'));
   console.log(c.dim('  "q" or "quarter" to advance quarter'));
+  console.log(c.dim('  "add" to add more boards'));
+  console.log(c.dim('  "save" to print board data for saving'));
   console.log(c.dim('  "exit" or "quit" to exit'));
 
   displayAllBoards(boards, state);
@@ -383,6 +385,36 @@ async function scoringLoop(boards: Board[]) {
       continue;
     }
 
+    if (input === 'add') {
+      console.log('Paste board data (blank line when done), or enter manually:\n');
+      const text = await readMultiLine();
+      if (text.length > 0) {
+        try {
+          const newBoards = parseBoards(text);
+          boards.push(...newBoards);
+          console.log(c.green(`Added ${newBoards.length} board(s) (${boards.length} total)`));
+        } catch (e: any) {
+          console.log(c.red(`Parse error: ${e.message}`));
+        }
+      } else {
+        const newBoards = await manualSetup();
+        boards.push(...newBoards);
+        console.log(c.green(`Added ${newBoards.length} board(s) (${boards.length} total)`));
+      }
+      displayAllBoards(boards, state);
+      continue;
+    }
+
+    if (input === 'save') {
+      console.log('\n' + c.dim('\u2500'.repeat(50)));
+      console.log(c.bold(c.cyan('Board data:')));
+      console.log('');
+      console.log(serializeBoards(boards));
+      console.log('');
+      console.log(c.dim('\u2500'.repeat(50)));
+      continue;
+    }
+
     const scoreMatch = input.match(/^(\d+)\s+(\d+)$/);
     if (scoreMatch) {
       state.score.top = parseInt(scoreMatch[1]);
@@ -391,7 +423,7 @@ async function scoringLoop(boards: Board[]) {
       continue;
     }
 
-    console.log(c.red('Unknown command. Enter two numbers, "q", or "exit".'));
+    console.log(c.red('Unknown command. Enter two numbers, "q", "add", "save", or "exit".'));
   }
 }
 
