@@ -1,0 +1,15 @@
+#!/bin/bash
+# Block pushes to main/master from Claude
+
+protected_branches=("main" "master")
+current_branch=$(git symbolic-ref HEAD 2>/dev/null | sed 's|refs/heads/||')
+
+for branch in "${protected_branches[@]}"; do
+    if [ "$current_branch" = "$branch" ]; then
+        echo "BLOCKED: Cannot push directly to $branch"
+        echo "Create a feature branch and PR instead."
+        exit 1
+    fi
+done
+
+exit 0

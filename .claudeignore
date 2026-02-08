@@ -1,0 +1,45 @@
+# === SECRETS (never let Claude read these) ===
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# === LARGE GENERATED FILES (waste of context) ===
+# Lock files - huge, not useful
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+/build/
+/dist/
+/.next/
+/.nuxt/
+/.output/
+/.react-router/
+
+# Dependencies
+/node_modules/
+
+# Generated code (Claude can read the source schemas instead)
+# Uncomment if applicable:
+# /app/generated/        # Prisma
+# /src/gql/              # GraphQL codegen
+# /__generated__/        # Relay
+
+# === TEST ARTIFACTS (usually not helpful) ===
+/playwright-report/
+/test-results/
+/coverage/
+/.nyc_output/
+
+# === RALPH LOGS ===
+# These COULD help Claude debug issues from previous iterations,
+# but they're large and not always present (gitignored).
+# Uncomment to exclude:
+# /ralph-logs/
+
+# === OS FILES ===
+.DS_Store
+Thumbs.db
