@@ -528,11 +528,72 @@ function renderScoringPanel(): HTMLElement {
   const panel = el('div', 'scoring-panel');
   panel.appendChild(renderScoringHeader());
 
+  const digitSummary = renderDigitSummary();
+  if (digitSummary) panel.appendChild(digitSummary);
+
   for (const board of boards) {
     panel.appendChild(renderBoardCard(board));
   }
 
   return panel;
+}
+
+// ── Digit Summary ──────────────────────────────────────────────────────
+
+function renderDigitSummary(): HTMLElement | null {
+  const items: HTMLElement[] = [];
+
+  for (const board of boards) {
+    const qi = quarterIndex(board, gameState.quarter);
+    const topDigits = new Set<number>();
+    const leftDigits = new Set<number>();
+
+    if (board.mySquares && board.mySquares.length > 0) {
+      for (const sq of board.mySquares) {
+        const d = sq.quarters[qi];
+        for (const n of d.topDigits) topDigits.add(n);
+        for (const n of d.leftDigits) leftDigits.add(n);
+      }
+    } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
+      const fb = board.fullBoard;
+      const qn = fb.quarters[qi];
+      const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
+      for (let r = 0; r < board.config.rows; r++) {
+        for (let c = 0; c < board.config.cols; c++) {
+          const owner = fb.grid[r]?.[c] ?? '';
+          if (mineSet.has(owner.toLowerCase())) {
+            for (const n of qn.topNumbers[c]) topDigits.add(n);
+            for (const n of qn.leftNumbers[r]) leftDigits.add(n);
+          }
+        }
+      }
+    }
+
+    if (topDigits.size === 0 && leftDigits.size === 0) continue;
+
+    const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
+    const item = el('div', 'digit-summary-board', [
+      el('div', 'digit-summary-name', [board.config.name]),
+      el('div', 'digit-summary-row', [
+        el('span', 'digit-summary-team', [board.config.topTeam + ':']),
+        el('span', 'digit-summary-digits', ['[' + sorted(topDigits).join(', ') + ']']),
+      ]),
+      el('div', 'digit-summary-row', [
+        el('span', 'digit-summary-team', [board.config.leftTeam + ':']),
+        el('span', 'digit-summary-digits', ['[' + sorted(leftDigits).join(', ') + ']']),
+      ]),
+    ]);
+    items.push(item);
+  }
+
+  if (items.length === 0) return null;
+
+  const section = el('div', 'digit-summary');
+  section.appendChild(el('div', 'digit-summary-title', ['My Digits This Quarter']));
+  const grid = el('div', 'digit-summary-grid');
+  for (const item of items) grid.appendChild(item);
+  section.appendChild(grid);
+  return section;
 }
 
 // ── Scoring Header ────────────────────────────────────────────────────
