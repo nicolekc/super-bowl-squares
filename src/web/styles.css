@@ -317,12 +317,21 @@ body {
 .digit-summary-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 1.25rem 1.5rem;
 }
 
 .digit-summary-board {
-  flex: 1;
-  min-width: 10rem;
+  flex: 0 0 auto;
+}
+
+.digit-summary-board.has-winner {
+  border-left: 3px solid var(--win);
+  padding-left: 0.75rem;
+}
+
+.digit-summary-board.has-near {
+  border-left: 3px solid var(--near);
+  padding-left: 0.75rem;
 }
 
 .digit-summary-name {
@@ -332,16 +341,30 @@ body {
   margin-bottom: 0.25rem;
 }
 
+.digit-summary-status {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.digit-summary-status.winner {
+  color: var(--win);
+}
+
+.digit-summary-status.near {
+  color: var(--near);
+}
+
 .digit-summary-row {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  white-space: nowrap;
 }
 
 .digit-summary-team {
   font-size: 0.8125rem;
   color: var(--muted);
-  min-width: 5rem;
 }
 
 .digit-summary-digits {
@@ -349,6 +372,14 @@ body {
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--primary);
+}
+
+.digit-summary-digits .digit-hit {
+  color: var(--win);
+}
+
+.digit-summary-digits .digit-near {
+  color: var(--near);
 }
 
 /* ── Board Card ────────────────────────────────────────── */
@@ -406,6 +437,35 @@ body {
 
 .grid-table th.corner {
   background: var(--bg);
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.2;
+  padding: 0.25rem;
+  white-space: normal;
+  text-align: center;
+}
+
+.grid-table .team-label-top {
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  border: none;
+  padding: 0.125rem 0;
+}
+
+.grid-table .team-label-left {
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  border: none;
+  padding: 0 0.125rem;
 }
 
 .grid-table td {
@@ -705,5 +765,17 @@ textarea::placeholder {
   .restore-bar {
     flex-direction: column;
     text-align: center;
+  }
+
+  .digit-summary {
+    padding: 0.75rem;
+  }
+
+  .digit-summary-grid {
+    gap: 0.75rem;
+  }
+
+  .digit-summary-board {
+    flex: 0 0 100%;
   }
 }

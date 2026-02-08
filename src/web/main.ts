@@ -6,7 +6,7 @@ import {
   MySquare, FullBoardData, QuarterDigits,
   parseBoards, serializeBoards,
   checkAllMySquares, getFullBoardCellStatuses, quarterIndex,
-  formatDigits,
+  formatDigits, lastDigit,
 } from '../core/index.js';
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -542,6 +542,12 @@ function renderScoringPanel(): HTMLElement {
 
 function renderDigitSummary(): HTMLElement | null {
   const items: HTMLElement[] = [];
+  const topLast = lastDigit(gameState.score.top);
+  const leftLast = lastDigit(gameState.score.left);
+
+  // Near-miss digits: what each team's score +3 or +7 would produce
+  const topNearDigits = new Set([lastDigit(gameState.score.top + 3), lastDigit(gameState.score.top + 7)]);
+  const leftNearDigits = new Set([lastDigit(gameState.score.left + 3), lastDigit(gameState.score.left + 7)]);
 
   for (const board of boards) {
     const qi = quarterIndex(board, gameState.quarter);
@@ -571,18 +577,60 @@ function renderDigitSummary(): HTMLElement | null {
 
     if (topDigits.size === 0 && leftDigits.size === 0) continue;
 
+    // Check if any of my squares are winning on this board
+    const isWinner = topDigits.has(topLast) && leftDigits.has(leftLast);
+    const isNear = !isWinner && (
+      (leftDigits.has(leftLast) && [...topDigits].some(d => topNearDigits.has(d))) ||
+      (topDigits.has(topLast) && [...leftDigits].some(d => leftNearDigits.has(d)))
+    );
+
     const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
-    const item = el('div', 'digit-summary-board', [
-      el('div', 'digit-summary-name', [board.config.name]),
-      el('div', 'digit-summary-row', [
-        el('span', 'digit-summary-team', [board.config.topTeam + ':']),
-        el('span', 'digit-summary-digits', ['[' + sorted(topDigits).join(', ') + ']']),
-      ]),
-      el('div', 'digit-summary-row', [
-        el('span', 'digit-summary-team', [board.config.leftTeam + ':']),
-        el('span', 'digit-summary-digits', ['[' + sorted(leftDigits).join(', ') + ']']),
-      ]),
-    ]);
+
+    // Build digit spans with hit/near highlighting
+    function digitSpans(digits: Set<number>, currentLast: number, nearSet: Set<number>, otherHit: boolean): HTMLElement {
+      const span = el('span', 'digit-summary-digits');
+      span.appendChild(text('['));
+      const arr = sorted(digits);
+      arr.forEach((d, i) => {
+        const dSpan = document.createElement('span');
+        dSpan.textContent = String(d);
+        if (d === currentLast && otherHit) {
+          dSpan.className = 'digit-hit';
+        } else if (nearSet.has(d) && otherHit) {
+          dSpan.className = 'digit-near';
+        }
+        span.appendChild(dSpan);
+        if (i < arr.length - 1) span.appendChild(text(', '));
+      });
+      span.appendChild(text(']'));
+      return span;
+    }
+
+    const boardClasses = ['digit-summary-board'];
+    if (isWinner) boardClasses.push('has-winner');
+    else if (isNear) boardClasses.push('has-near');
+
+    const item = el('div', boardClasses.join(' '));
+    item.appendChild(el('div', 'digit-summary-name', [board.config.name]));
+
+    if (isWinner) {
+      const payout = board.config.payouts?.[gameState.quarter];
+      const winText = payout != null ? `IN THE MONEY — $${payout}` : 'IN THE MONEY';
+      item.appendChild(el('div', 'digit-summary-status winner', [winText]));
+    } else if (isNear) {
+      item.appendChild(el('div', 'digit-summary-status near', ['Near miss!']));
+    }
+
+    const topRow = el('div', 'digit-summary-row');
+    topRow.appendChild(el('span', 'digit-summary-team', [board.config.topTeam + ':']));
+    topRow.appendChild(digitSpans(topDigits, topLast, topNearDigits, leftDigits.has(leftLast)));
+    item.appendChild(topRow);
+
+    const leftRow = el('div', 'digit-summary-row');
+    leftRow.appendChild(el('span', 'digit-summary-team', [board.config.leftTeam + ':']));
+    leftRow.appendChild(digitSpans(leftDigits, leftLast, leftNearDigits, topDigits.has(topLast)));
+    item.appendChild(leftRow);
+
     items.push(item);
   }
 
@@ -777,11 +825,24 @@ function renderFullBoardGrid(board: Board): HTMLElement {
   const wrapper = el('div', 'grid-table-wrapper');
   const table = el('table', 'grid-table');
 
-  // Header row with top numbers
+  // Header row: team label row above numbers
   const thead = document.createElement('thead');
+  const teamRow = document.createElement('tr');
+  const teamCorner = document.createElement('th');
+  teamCorner.className = 'corner';
+  teamRow.appendChild(teamCorner);
+  const topTeamTh = document.createElement('th');
+  topTeamTh.className = 'team-label-top';
+  topTeamTh.colSpan = board.config.cols;
+  topTeamTh.textContent = `\u2190 ${board.config.topTeam} \u2192`;
+  teamRow.appendChild(topTeamTh);
+  thead.appendChild(teamRow);
+
+  // Header row with top numbers
   const headerRow = document.createElement('tr');
   const corner = document.createElement('th');
   corner.className = 'corner';
+  corner.innerHTML = `<span style="font-size:0.5rem">${board.config.leftTeam}</span>`;
   headerRow.appendChild(corner);
 
   for (let c = 0; c < board.config.cols; c++) {
