@@ -457,6 +457,101 @@ body {
   color: var(--win);
 }
 
+/* ── Preview Picker ───────────────────────────────────── */
+
+.digit-summary-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.digit-summary-header .digit-summary-title {
+  margin-bottom: 0;
+}
+
+.preview-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.preview-row {
+  display: flex;
+  align-items: center;
+  gap: 0.1875rem;
+}
+
+.preview-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 2rem;
+  text-align: right;
+  margin-right: 0.125rem;
+}
+
+.preview-digit {
+  all: unset;
+  cursor: pointer;
+  width: 1.375rem;
+  height: 1.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  font-weight: 500;
+  color: var(--muted);
+  border-radius: 0.25rem;
+  border: 1px solid var(--border);
+  transition: all 0.1s;
+}
+
+.preview-digit:hover {
+  color: var(--text);
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.preview-digit.active {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  font-weight: 700;
+}
+
+.preview-clear {
+  all: unset;
+  cursor: pointer;
+  width: 1.375rem;
+  height: 1.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  color: var(--muted);
+  border-radius: 0.25rem;
+  border: 1px solid var(--border);
+  margin-left: 0.25rem;
+}
+
+.preview-clear:hover {
+  color: #fff;
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.preview-notice {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-style: italic;
+  margin-bottom: 0.5rem;
+}
+
 /* ── Board Card ────────────────────────────────────────── */
 
 .board-card {
