@@ -25,6 +25,7 @@ let activeTab: 'setup' | 'scoring' = 'setup';
 
 /** Scores locked in at the end of each quarter (index 0-3). null = not yet played. */
 let quarterScores: (Score | null)[] = [null, null, null, null];
+let gameFinalized = false;
 
 // ── DOM Helpers ───────────────────────────────────────────────────────
 
@@ -109,6 +110,7 @@ function saveGameState(): void {
     quarter: gameState.quarter,
     score: gameState.score,
     quarterScores,
+    gameFinalized,
   }));
 }
 
@@ -132,6 +134,7 @@ function loadGameState(): void {
         }
       }
     }
+    if (typeof s.gameFinalized === 'boolean') gameFinalized = s.gameFinalized;
   } catch {
     // ignore corrupt state
   }
@@ -582,13 +585,14 @@ function renderScoringPanel(): HTMLElement {
 
 function renderPastQuarterWinners(): HTMLElement | null {
   // Only show if at least one past quarter has been scored
-  const pastQuarters = quarterScores.slice(0, gameState.quarter).filter(Boolean);
+  const maxQ = gameFinalized ? 4 : gameState.quarter;
+  const pastQuarters = quarterScores.slice(0, maxQ).filter(Boolean);
   if (pastQuarters.length === 0) return null;
 
   const section = el('div', 'past-winners');
   section.appendChild(el('div', 'past-winners-title', ['Quarter Results']));
 
-  for (let q = 0; q < gameState.quarter; q++) {
+  for (let q = 0; q < maxQ; q++) {
     const qs = quarterScores[q];
     if (!qs) continue;
 
@@ -980,6 +984,21 @@ function renderScoringHeader(): HTMLElement {
       // Snapshot this quarter's final score
       quarterScores[gameState.quarter] = { ...gameState.score };
       gameState.quarter++;
+      saveGameState();
+      render();
+    }));
+  } else if (!gameFinalized) {
+    qActions.appendChild(btn('Finalize Game', 'btn btn-primary btn-sm', () => {
+      syncScore();
+      quarterScores[3] = { ...gameState.score };
+      gameFinalized = true;
+      saveGameState();
+      render();
+    }));
+  } else {
+    qActions.appendChild(btn('Undo Finalize', 'btn btn-secondary btn-sm', () => {
+      gameFinalized = false;
+      quarterScores[3] = null;
       saveGameState();
       render();
     }));
