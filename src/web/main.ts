@@ -564,12 +564,56 @@ function renderScoringPanel(): HTMLElement {
   return panel;
 }
 
+// ── NFL Team Abbreviations ────────────────────────────────────────────
+
+const NFL_ABBREVS: Record<string, string> = {
+  'arizona cardinals': 'ARI', 'cardinals': 'ARI',
+  'atlanta falcons': 'ATL', 'falcons': 'ATL',
+  'baltimore ravens': 'BAL', 'ravens': 'BAL',
+  'buffalo bills': 'BUF', 'bills': 'BUF',
+  'carolina panthers': 'CAR', 'panthers': 'CAR',
+  'chicago bears': 'CHI', 'bears': 'CHI',
+  'cincinnati bengals': 'CIN', 'bengals': 'CIN',
+  'cleveland browns': 'CLE', 'browns': 'CLE',
+  'dallas cowboys': 'DAL', 'cowboys': 'DAL',
+  'denver broncos': 'DEN', 'broncos': 'DEN',
+  'detroit lions': 'DET', 'lions': 'DET',
+  'green bay packers': 'GB', 'packers': 'GB',
+  'houston texans': 'HOU', 'texans': 'HOU',
+  'indianapolis colts': 'IND', 'colts': 'IND',
+  'jacksonville jaguars': 'JAX', 'jaguars': 'JAX',
+  'kansas city chiefs': 'KC', 'chiefs': 'KC',
+  'las vegas raiders': 'LV', 'raiders': 'LV',
+  'los angeles chargers': 'LAC', 'chargers': 'LAC',
+  'los angeles rams': 'LAR', 'rams': 'LAR',
+  'miami dolphins': 'MIA', 'dolphins': 'MIA',
+  'minnesota vikings': 'MIN', 'vikings': 'MIN',
+  'new england patriots': 'NE', 'patriots': 'NE',
+  'new orleans saints': 'NO', 'saints': 'NO',
+  'new york giants': 'NYG', 'giants': 'NYG',
+  'new york jets': 'NYJ', 'jets': 'NYJ',
+  'philadelphia eagles': 'PHI', 'eagles': 'PHI',
+  'pittsburgh steelers': 'PIT', 'steelers': 'PIT',
+  'san francisco 49ers': 'SF', '49ers': 'SF',
+  'seattle seahawks': 'SEA', 'seahawks': 'SEA',
+  'tampa bay buccaneers': 'TB', 'buccaneers': 'TB', 'bucs': 'TB',
+  'tennessee titans': 'TEN', 'titans': 'TEN',
+  'washington commanders': 'WAS', 'commanders': 'WAS',
+};
+
+function shortTeamName(fullName: string): string {
+  const abbrev = NFL_ABBREVS[fullName.toLowerCase()];
+  if (abbrev) return abbrev;
+  return fullName;
+}
+
 // ── Digit Summary ──────────────────────────────────────────────────────
 
-/** A square pair: top digits and left digits for one cell */
-interface SquarePair {
+/** A merged row: one top-digit group with all its associated left-digit groups */
+interface MergedRow {
+  topKey: string;
   topDigits: number[];
-  leftDigits: number[];
+  leftGroups: number[][];  // each entry is a unique set of left digits
 }
 
 function renderDigitSummary(): HTMLElement | null {
@@ -579,14 +623,16 @@ function renderDigitSummary(): HTMLElement | null {
 
   for (const board of boards) {
     const qi = quarterIndex(board, gameState.quarter);
+    const topShort = shortTeamName(board.config.topTeam);
+    const leftShort = shortTeamName(board.config.leftTeam);
 
-    // Collect square pairs
-    const pairs: SquarePair[] = [];
+    // Collect raw pairs
+    const rawPairs: { topDigits: number[]; leftDigits: number[] }[] = [];
 
     if (board.mySquares && board.mySquares.length > 0) {
       for (const sq of board.mySquares) {
         const d = sq.quarters[qi];
-        pairs.push({ topDigits: d.topDigits, leftDigits: d.leftDigits });
+        rawPairs.push({ topDigits: d.topDigits, leftDigits: d.leftDigits });
       }
     } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
       const fb = board.fullBoard;
@@ -596,28 +642,34 @@ function renderDigitSummary(): HTMLElement | null {
         for (let c = 0; c < board.config.cols; c++) {
           const owner = fb.grid[r]?.[c] ?? '';
           if (mineSet.has(owner.toLowerCase())) {
-            pairs.push({ topDigits: qn.topNumbers[c], leftDigits: qn.leftNumbers[r] });
+            rawPairs.push({ topDigits: qn.topNumbers[c], leftDigits: qn.leftNumbers[r] });
           }
         }
       }
     }
 
-    if (pairs.length === 0) continue;
+    if (rawPairs.length === 0) continue;
 
-    // Dedupe pairs by key
-    const seen = new Set<string>();
-    const uniquePairs: SquarePair[] = [];
-    for (const p of pairs) {
-      const key = `${p.topDigits.join(',')}-${p.leftDigits.join(',')}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniquePairs.push(p);
+    // Group by top digits, merge left digits
+    const mergedMap = new Map<string, MergedRow>();
+    for (const p of rawPairs) {
+      const topKey = formatDigits(p.topDigits);
+      let row = mergedMap.get(topKey);
+      if (!row) {
+        row = { topKey, topDigits: p.topDigits, leftGroups: [] };
+        mergedMap.set(topKey, row);
+      }
+      const leftKey = formatDigits(p.leftDigits);
+      if (!row.leftGroups.some(lg => formatDigits(lg) === leftKey)) {
+        row.leftGroups.push(p.leftDigits);
       }
     }
+    const merged = [...mergedMap.values()];
 
-    // Check if any pair is winning
-    const hasWinner = uniquePairs.some(p =>
-      p.topDigits.includes(topLast) && p.leftDigits.includes(leftLast),
+    // Check if any combination is winning
+    const hasWinner = merged.some(row =>
+      row.topDigits.includes(topLast) &&
+      row.leftGroups.some(lg => lg.includes(leftLast)),
     );
 
     const boardClasses = ['digit-summary-board'];
@@ -632,22 +684,30 @@ function renderDigitSummary(): HTMLElement | null {
       item.appendChild(el('div', 'digit-summary-status winner', [winText]));
     }
 
-    // Render each pair as a row
+    // Render merged rows
     const pairsContainer = el('div', 'digit-summary-pairs');
-    for (const p of uniquePairs) {
-      const isHit = p.topDigits.includes(topLast) && p.leftDigits.includes(leftLast);
+    for (const row of merged) {
+      const isHit = row.topDigits.includes(topLast) &&
+        row.leftGroups.some(lg => lg.includes(leftLast));
       const pairEl = el('div', `digit-summary-pair${isHit ? ' pair-hit' : ''}`);
 
-      const topSpan = el('span', 'digit-summary-digits');
-      topSpan.textContent = formatDigits(p.topDigits);
-      const leftSpan = el('span', 'digit-summary-digits');
-      leftSpan.textContent = formatDigits(p.leftDigits);
+      // Top side
+      pairEl.appendChild(el('span', 'ds-team', [topShort]));
+      pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.topDigits)]));
 
-      pairEl.appendChild(el('span', 'digit-summary-team-short', [board.config.topTeam + ' ']));
-      pairEl.appendChild(topSpan);
-      pairEl.appendChild(el('span', 'digit-summary-sep', [' / ']));
-      pairEl.appendChild(el('span', 'digit-summary-team-short', [board.config.leftTeam + ' ']));
-      pairEl.appendChild(leftSpan);
+      pairEl.appendChild(el('span', 'ds-sep', ['/']));
+
+      // Left side: single digit or [list]
+      pairEl.appendChild(el('span', 'ds-team', [leftShort]));
+      if (row.leftGroups.length === 1) {
+        pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.leftGroups[0])]));
+      } else {
+        const sorted = row.leftGroups
+          .map(lg => formatDigits(lg))
+          .sort((a, b) => parseInt(a) - parseInt(b));
+        pairEl.appendChild(el('span', 'ds-digit', ['[' + sorted.join(', ') + ']']));
+      }
+
       pairsContainer.appendChild(pairEl);
     }
     item.appendChild(pairsContainer);
