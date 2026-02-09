@@ -2,11 +2,11 @@
 // Pure DOM manipulation, no frameworks. Imports from the core library.
 
 import {
-  Board, BoardConfig, GameState, AxisSize, SquareStatus, NearMiss,
+  Board, BoardConfig, GameState, AxisSize, SquareStatus, NearMiss, Score,
   MySquare, FullBoardData, QuarterDigits,
   parseBoards, serializeBoards,
   checkAllMySquares, getFullBoardCellStatuses, quarterIndex,
-  formatDigits, lastDigit,
+  formatDigits, lastDigit, findPosition,
 } from '../core/index.js';
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -20,6 +20,9 @@ const LS_STATE_KEY = 'sb-squares-state';
 let boards: Board[] = [];
 let gameState: GameState = { quarter: 0, score: { top: 0, left: 0 } };
 let activeTab: 'setup' | 'scoring' = 'setup';
+
+/** Scores locked in at the end of each quarter (index 0-3). null = not yet played. */
+let quarterScores: (Score | null)[] = [null, null, null, null];
 
 // ── DOM Helpers ───────────────────────────────────────────────────────
 
@@ -96,16 +99,14 @@ function saveToLocalStorage(): void {
     return;
   }
   localStorage.setItem(LS_KEY, serializeBoards(boards));
-  localStorage.setItem(LS_STATE_KEY, JSON.stringify({
-    quarter: gameState.quarter,
-    score: gameState.score,
-  }));
+  saveGameState();
 }
 
 function saveGameState(): void {
   localStorage.setItem(LS_STATE_KEY, JSON.stringify({
     quarter: gameState.quarter,
     score: gameState.score,
+    quarterScores,
   }));
 }
 
@@ -121,6 +122,14 @@ function loadGameState(): void {
     if (typeof s.quarter === 'number') gameState.quarter = s.quarter;
     if (s.score && typeof s.score.top === 'number') gameState.score.top = s.score.top;
     if (s.score && typeof s.score.left === 'number') gameState.score.left = s.score.left;
+    if (Array.isArray(s.quarterScores)) {
+      for (let i = 0; i < 4; i++) {
+        const qs = s.quarterScores[i];
+        if (qs && typeof qs.top === 'number' && typeof qs.left === 'number') {
+          quarterScores[i] = { top: qs.top, left: qs.left };
+        }
+      }
+    }
   } catch {
     // ignore corrupt state
   }
@@ -554,6 +563,9 @@ function renderScoringPanel(): HTMLElement {
   const panel = el('div', 'scoring-panel');
   panel.appendChild(renderScoringHeader());
 
+  const pastWinners = renderPastQuarterWinners();
+  if (pastWinners) panel.appendChild(pastWinners);
+
   const digitSummary = renderDigitSummary();
   if (digitSummary) panel.appendChild(digitSummary);
 
@@ -562,6 +574,87 @@ function renderScoringPanel(): HTMLElement {
   }
 
   return panel;
+}
+
+// ── Past Quarter Winners ──────────────────────────────────────────────
+
+function renderPastQuarterWinners(): HTMLElement | null {
+  // Only show if at least one past quarter has been scored
+  const pastQuarters = quarterScores.slice(0, gameState.quarter).filter(Boolean);
+  if (pastQuarters.length === 0) return null;
+
+  const section = el('div', 'past-winners');
+  section.appendChild(el('div', 'past-winners-title', ['Quarter Results']));
+
+  for (let q = 0; q < gameState.quarter; q++) {
+    const qs = quarterScores[q];
+    if (!qs) continue;
+
+    const topTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
+    const leftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
+    const topShort = shortTeamName(topTeam);
+    const leftShort = shortTeamName(leftTeam);
+    const topD = lastDigit(qs.top);
+    const leftD = lastDigit(qs.left);
+
+    const qRow = el('div', 'past-winners-quarter');
+    qRow.appendChild(el('span', 'pw-label', [QUARTER_LABELS[q]]));
+    qRow.appendChild(el('span', 'pw-score', [
+      `${topShort} ${qs.top} - ${leftShort} ${qs.left}`,
+    ]));
+
+    // Find winners across all boards
+    const winnerNames: string[] = [];
+    for (const board of boards) {
+      const qi = quarterIndex(board, q);
+      const mineSet = board.fullBoard
+        ? new Set(board.fullBoard.mySquareNames.map(n => n.toLowerCase()))
+        : new Set<string>();
+
+      // Map canonical scores to this board's axes
+      const boardScore = scoreForBoard(board, qs);
+      const boardTopD = lastDigit(boardScore.top);
+      const boardLeftD = lastDigit(boardScore.left);
+
+      if (board.fullBoard) {
+        const qn = board.fullBoard.quarters[qi];
+        const winCol = findPosition(qn.topNumbers, boardTopD);
+        const winRow = findPosition(qn.leftNumbers, boardLeftD);
+        if (winCol >= 0 && winRow >= 0) {
+          const owner = board.fullBoard.grid[winRow]?.[winCol] ?? '???';
+          const isMine = mineSet.has(owner.toLowerCase());
+          const payout = board.config.payouts?.[q];
+          let entry = owner;
+          if (payout != null) entry += ` ($${payout})`;
+          if (isMine) entry = '\u2605 ' + entry;
+          winnerNames.push(entry);
+        }
+      } else if (board.mySquares) {
+        const digits = board.mySquares.map(sq => sq.quarters[qi]);
+        for (const d of digits) {
+          if (d.topDigits.includes(boardTopD) && d.leftDigits.includes(boardLeftD)) {
+            const payout = board.config.payouts?.[q];
+            let entry = `${board.config.name}`;
+            if (payout != null) entry += ` ($${payout})`;
+            entry = '\u2605 ' + entry;
+            winnerNames.push(entry);
+            break;
+          }
+        }
+      }
+    }
+
+    if (winnerNames.length > 0) {
+      for (const name of winnerNames) {
+        const isMine = name.startsWith('\u2605');
+        qRow.appendChild(el('span', isMine ? 'pw-winner pw-mine' : 'pw-winner', [name]));
+      }
+    }
+
+    section.appendChild(qRow);
+  }
+
+  return section;
 }
 
 // ── NFL Team Abbreviations ────────────────────────────────────────────
@@ -607,6 +700,44 @@ function shortTeamName(fullName: string): string {
   return fullName;
 }
 
+/**
+ * Returns true if this board's teams are swapped relative to the
+ * canonical order (boards[0]). When swapped, the board's "top" axis
+ * corresponds to the canonical "left" team and vice versa.
+ */
+function isBoardSwapped(board: Board): boolean {
+  if (boards.length === 0) return false;
+  const canonTopAbbr = shortTeamName(boards[0].config.topTeam);
+  const canonLeftAbbr = shortTeamName(boards[0].config.leftTeam);
+  const boardTopAbbr = shortTeamName(board.config.topTeam);
+  const boardLeftAbbr = shortTeamName(board.config.leftTeam);
+  return boardTopAbbr === canonLeftAbbr && boardLeftAbbr === canonTopAbbr;
+}
+
+/**
+ * Returns a GameState with scores mapped correctly for the given board.
+ * If the board's teams are swapped relative to the canonical order,
+ * the top/left scores are swapped so the board's scoring functions
+ * receive the right values.
+ */
+function gameStateForBoard(board: Board, state?: GameState): GameState {
+  const s = state ?? gameState;
+  if (isBoardSwapped(board)) {
+    return { quarter: s.quarter, score: { top: s.score.left, left: s.score.top } };
+  }
+  return s;
+}
+
+/**
+ * Same as gameStateForBoard but for a raw Score (used for past quarter winners).
+ */
+function scoreForBoard(board: Board, score: Score): Score {
+  if (isBoardSwapped(board)) {
+    return { top: score.left, left: score.top };
+  }
+  return score;
+}
+
 // ── Digit Summary ──────────────────────────────────────────────────────
 
 /** A merged row: one top-digit group with all its associated left-digit groups */
@@ -621,18 +752,40 @@ function renderDigitSummary(): HTMLElement | null {
   const topLast = lastDigit(gameState.score.top);
   const leftLast = lastDigit(gameState.score.left);
 
+  // Canonical team order from the scoring header (first board)
+  const canonTopTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
+  const canonLeftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
+  const canonTopShort = shortTeamName(canonTopTeam);
+  const canonLeftShort = shortTeamName(canonLeftTeam);
+
   for (const board of boards) {
     const qi = quarterIndex(board, gameState.quarter);
-    const topShort = shortTeamName(board.config.topTeam);
-    const leftShort = shortTeamName(board.config.leftTeam);
 
-    // Collect raw pairs
-    const rawPairs: { topDigits: number[]; leftDigits: number[] }[] = [];
+    // Detect if this board's teams are swapped relative to the canonical order.
+    // "scoreTop" corresponds to canonTopTeam. If this board's topTeam matches
+    // canonLeftTeam (or its left matches canonTop), the axes are flipped.
+    const boardTopAbbr = shortTeamName(board.config.topTeam);
+    const boardLeftAbbr = shortTeamName(board.config.leftTeam);
+    const isSwapped = boardTopAbbr === canonLeftShort && boardLeftAbbr === canonTopShort;
+
+    // When swapped: board's "top" axis = canonical "left" score,
+    //               board's "left" axis = canonical "top" score.
+    // For display we always show canonical order (canonTop first, canonLeft second).
+    // "firstDigits" = digits along the canonical-top axis
+    // "secondDigits" = digits along the canonical-left axis
+    const scoreFirst = isSwapped ? leftLast : topLast;   // last digit for the first (canonical-top) team
+    const scoreSecond = isSwapped ? topLast : leftLast;   // last digit for the second (canonical-left) team
+
+    // Collect raw pairs in canonical order: { firstDigits, secondDigits }
+    const rawPairs: { firstDigits: number[]; secondDigits: number[] }[] = [];
 
     if (board.mySquares && board.mySquares.length > 0) {
       for (const sq of board.mySquares) {
         const d = sq.quarters[qi];
-        rawPairs.push({ topDigits: d.topDigits, leftDigits: d.leftDigits });
+        rawPairs.push({
+          firstDigits: isSwapped ? d.leftDigits : d.topDigits,
+          secondDigits: isSwapped ? d.topDigits : d.leftDigits,
+        });
       }
     } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
       const fb = board.fullBoard;
@@ -642,7 +795,10 @@ function renderDigitSummary(): HTMLElement | null {
         for (let c = 0; c < board.config.cols; c++) {
           const owner = fb.grid[r]?.[c] ?? '';
           if (mineSet.has(owner.toLowerCase())) {
-            rawPairs.push({ topDigits: qn.topNumbers[c], leftDigits: qn.leftNumbers[r] });
+            rawPairs.push({
+              firstDigits: isSwapped ? qn.leftNumbers[r] : qn.topNumbers[c],
+              secondDigits: isSwapped ? qn.topNumbers[c] : qn.leftNumbers[r],
+            });
           }
         }
       }
@@ -650,26 +806,26 @@ function renderDigitSummary(): HTMLElement | null {
 
     if (rawPairs.length === 0) continue;
 
-    // Group by top digits, merge left digits
+    // Group by first (canonical-top) digits, merge second (canonical-left) digits
     const mergedMap = new Map<string, MergedRow>();
     for (const p of rawPairs) {
-      const topKey = formatDigits(p.topDigits);
+      const topKey = formatDigits(p.firstDigits);
       let row = mergedMap.get(topKey);
       if (!row) {
-        row = { topKey, topDigits: p.topDigits, leftGroups: [] };
+        row = { topKey, topDigits: p.firstDigits, leftGroups: [] };
         mergedMap.set(topKey, row);
       }
-      const leftKey = formatDigits(p.leftDigits);
+      const leftKey = formatDigits(p.secondDigits);
       if (!row.leftGroups.some(lg => formatDigits(lg) === leftKey)) {
-        row.leftGroups.push(p.leftDigits);
+        row.leftGroups.push(p.secondDigits);
       }
     }
     const merged = [...mergedMap.values()];
 
     // Check if any combination is winning
     const hasWinner = merged.some(row =>
-      row.topDigits.includes(topLast) &&
-      row.leftGroups.some(lg => lg.includes(leftLast)),
+      row.topDigits.includes(scoreFirst) &&
+      row.leftGroups.some(lg => lg.includes(scoreSecond)),
     );
 
     const boardClasses = ['digit-summary-board'];
@@ -684,21 +840,21 @@ function renderDigitSummary(): HTMLElement | null {
       item.appendChild(el('div', 'digit-summary-status winner', [winText]));
     }
 
-    // Render merged rows
+    // Render merged rows — always in canonical team order
     const pairsContainer = el('div', 'digit-summary-pairs');
     for (const row of merged) {
-      const isHit = row.topDigits.includes(topLast) &&
-        row.leftGroups.some(lg => lg.includes(leftLast));
+      const isHit = row.topDigits.includes(scoreFirst) &&
+        row.leftGroups.some(lg => lg.includes(scoreSecond));
       const pairEl = el('div', `digit-summary-pair${isHit ? ' pair-hit' : ''}`);
 
-      // Top side
-      pairEl.appendChild(el('span', 'ds-team', [topShort]));
+      // First team (canonical top)
+      pairEl.appendChild(el('span', 'ds-team', [canonTopShort]));
       pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.topDigits)]));
 
       pairEl.appendChild(el('span', 'ds-sep', ['/']));
 
-      // Left side: single digit or [list]
-      pairEl.appendChild(el('span', 'ds-team', [leftShort]));
+      // Second team (canonical left): single digit or [list]
+      pairEl.appendChild(el('span', 'ds-team', [canonLeftShort]));
       if (row.leftGroups.length === 1) {
         pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.leftGroups[0])]));
       } else {
@@ -763,6 +919,8 @@ function renderScoringHeader(): HTMLElement {
   if (gameState.quarter < 3) {
     qActions.appendChild(btn('Next Quarter', 'btn btn-secondary btn-sm', () => {
       syncScore();
+      // Snapshot this quarter's final score
+      quarterScores[gameState.quarter] = { ...gameState.score };
       gameState.quarter++;
       saveGameState();
       render();
@@ -869,7 +1027,7 @@ function renderMineEditor(board: Board): HTMLElement {
 // ── My Squares List ───────────────────────────────────────────────────
 
 function renderMySquaresList(board: Board): HTMLElement {
-  const statuses = checkAllMySquares(board, gameState);
+  const statuses = checkAllMySquares(board, gameStateForBoard(board));
   const list = el('ul', 'square-list');
 
   board.mySquares!.forEach((sq, i) => {
@@ -910,7 +1068,7 @@ function renderFullBoardGrid(board: Board): HTMLElement {
   const fb = board.fullBoard!;
   const qi = quarterIndex(board, gameState.quarter);
   const qn = fb.quarters[qi];
-  const cellStatuses = getFullBoardCellStatuses(board, gameState);
+  const cellStatuses = getFullBoardCellStatuses(board, gameStateForBoard(board));
   const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
 
   const wrapper = el('div', 'grid-table-wrapper');
@@ -997,7 +1155,7 @@ function renderFullBoardSummary(board: Board): HTMLElement {
   const fb = board.fullBoard!;
   const qi = quarterIndex(board, gameState.quarter);
   const qn = fb.quarters[qi];
-  const cellStatuses = getFullBoardCellStatuses(board, gameState);
+  const cellStatuses = getFullBoardCellStatuses(board, gameStateForBoard(board));
   const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
 
   const summary = el('div', 'status-summary');
