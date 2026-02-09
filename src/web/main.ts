@@ -13,6 +13,7 @@ import {
 
 const QUARTER_LABELS = ['Q1', 'Q2', 'Q3', 'Final'];
 const LS_KEY = 'sb-squares-data';
+const LS_STATE_KEY = 'sb-squares-state';
 
 // ── App State ─────────────────────────────────────────────────────────
 
@@ -91,13 +92,38 @@ function showToast(message: string): void {
 function saveToLocalStorage(): void {
   if (boards.length === 0) {
     localStorage.removeItem(LS_KEY);
+    localStorage.removeItem(LS_STATE_KEY);
     return;
   }
   localStorage.setItem(LS_KEY, serializeBoards(boards));
+  localStorage.setItem(LS_STATE_KEY, JSON.stringify({
+    quarter: gameState.quarter,
+    score: gameState.score,
+  }));
+}
+
+function saveGameState(): void {
+  localStorage.setItem(LS_STATE_KEY, JSON.stringify({
+    quarter: gameState.quarter,
+    score: gameState.score,
+  }));
 }
 
 function loadFromLocalStorage(): string | null {
   return localStorage.getItem(LS_KEY);
+}
+
+function loadGameState(): void {
+  const raw = localStorage.getItem(LS_STATE_KEY);
+  if (!raw) return;
+  try {
+    const s = JSON.parse(raw);
+    if (typeof s.quarter === 'number') gameState.quarter = s.quarter;
+    if (s.score && typeof s.score.top === 'number') gameState.score.top = s.score.top;
+    if (s.score && typeof s.score.left === 'number') gameState.score.left = s.score.left;
+  } catch {
+    // ignore corrupt state
+  }
 }
 
 // ── Render Engine ─────────────────────────────────────────────────────
@@ -538,27 +564,75 @@ function renderScoringPanel(): HTMLElement {
   return panel;
 }
 
+// ── NFL Team Abbreviations ────────────────────────────────────────────
+
+const NFL_ABBREVS: Record<string, string> = {
+  'arizona cardinals': 'ARI', 'cardinals': 'ARI',
+  'atlanta falcons': 'ATL', 'falcons': 'ATL',
+  'baltimore ravens': 'BAL', 'ravens': 'BAL',
+  'buffalo bills': 'BUF', 'bills': 'BUF',
+  'carolina panthers': 'CAR', 'panthers': 'CAR',
+  'chicago bears': 'CHI', 'bears': 'CHI',
+  'cincinnati bengals': 'CIN', 'bengals': 'CIN',
+  'cleveland browns': 'CLE', 'browns': 'CLE',
+  'dallas cowboys': 'DAL', 'cowboys': 'DAL',
+  'denver broncos': 'DEN', 'broncos': 'DEN',
+  'detroit lions': 'DET', 'lions': 'DET',
+  'green bay packers': 'GB', 'packers': 'GB',
+  'houston texans': 'HOU', 'texans': 'HOU',
+  'indianapolis colts': 'IND', 'colts': 'IND',
+  'jacksonville jaguars': 'JAX', 'jaguars': 'JAX',
+  'kansas city chiefs': 'KC', 'chiefs': 'KC',
+  'las vegas raiders': 'LV', 'raiders': 'LV',
+  'los angeles chargers': 'LAC', 'chargers': 'LAC',
+  'los angeles rams': 'LAR', 'rams': 'LAR',
+  'miami dolphins': 'MIA', 'dolphins': 'MIA',
+  'minnesota vikings': 'MIN', 'vikings': 'MIN',
+  'new england patriots': 'NE', 'patriots': 'NE',
+  'new orleans saints': 'NO', 'saints': 'NO',
+  'new york giants': 'NYG', 'giants': 'NYG',
+  'new york jets': 'NYJ', 'jets': 'NYJ',
+  'philadelphia eagles': 'PHI', 'eagles': 'PHI',
+  'pittsburgh steelers': 'PIT', 'steelers': 'PIT',
+  'san francisco 49ers': 'SF', '49ers': 'SF',
+  'seattle seahawks': 'SEA', 'seahawks': 'SEA',
+  'tampa bay buccaneers': 'TB', 'buccaneers': 'TB', 'bucs': 'TB',
+  'tennessee titans': 'TEN', 'titans': 'TEN',
+  'washington commanders': 'WAS', 'commanders': 'WAS',
+};
+
+function shortTeamName(fullName: string): string {
+  const abbrev = NFL_ABBREVS[fullName.toLowerCase()];
+  if (abbrev) return abbrev;
+  return fullName;
+}
+
 // ── Digit Summary ──────────────────────────────────────────────────────
+
+/** A merged row: one top-digit group with all its associated left-digit groups */
+interface MergedRow {
+  topKey: string;
+  topDigits: number[];
+  leftGroups: number[][];  // each entry is a unique set of left digits
+}
 
 function renderDigitSummary(): HTMLElement | null {
   const items: HTMLElement[] = [];
   const topLast = lastDigit(gameState.score.top);
   const leftLast = lastDigit(gameState.score.left);
 
-  // Near-miss digits: what each team's score +3 or +7 would produce
-  const topNearDigits = new Set([lastDigit(gameState.score.top + 3), lastDigit(gameState.score.top + 7)]);
-  const leftNearDigits = new Set([lastDigit(gameState.score.left + 3), lastDigit(gameState.score.left + 7)]);
-
   for (const board of boards) {
     const qi = quarterIndex(board, gameState.quarter);
-    const topDigits = new Set<number>();
-    const leftDigits = new Set<number>();
+    const topShort = shortTeamName(board.config.topTeam);
+    const leftShort = shortTeamName(board.config.leftTeam);
+
+    // Collect raw pairs
+    const rawPairs: { topDigits: number[]; leftDigits: number[] }[] = [];
 
     if (board.mySquares && board.mySquares.length > 0) {
       for (const sq of board.mySquares) {
         const d = sq.quarters[qi];
-        for (const n of d.topDigits) topDigits.add(n);
-        for (const n of d.leftDigits) leftDigits.add(n);
+        rawPairs.push({ topDigits: d.topDigits, leftDigits: d.leftDigits });
       }
     } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
       const fb = board.fullBoard;
@@ -568,68 +642,75 @@ function renderDigitSummary(): HTMLElement | null {
         for (let c = 0; c < board.config.cols; c++) {
           const owner = fb.grid[r]?.[c] ?? '';
           if (mineSet.has(owner.toLowerCase())) {
-            for (const n of qn.topNumbers[c]) topDigits.add(n);
-            for (const n of qn.leftNumbers[r]) leftDigits.add(n);
+            rawPairs.push({ topDigits: qn.topNumbers[c], leftDigits: qn.leftNumbers[r] });
           }
         }
       }
     }
 
-    if (topDigits.size === 0 && leftDigits.size === 0) continue;
+    if (rawPairs.length === 0) continue;
 
-    // Check if any of my squares are winning on this board
-    const isWinner = topDigits.has(topLast) && leftDigits.has(leftLast);
-    const isNear = !isWinner && (
-      (leftDigits.has(leftLast) && [...topDigits].some(d => topNearDigits.has(d))) ||
-      (topDigits.has(topLast) && [...leftDigits].some(d => leftNearDigits.has(d)))
+    // Group by top digits, merge left digits
+    const mergedMap = new Map<string, MergedRow>();
+    for (const p of rawPairs) {
+      const topKey = formatDigits(p.topDigits);
+      let row = mergedMap.get(topKey);
+      if (!row) {
+        row = { topKey, topDigits: p.topDigits, leftGroups: [] };
+        mergedMap.set(topKey, row);
+      }
+      const leftKey = formatDigits(p.leftDigits);
+      if (!row.leftGroups.some(lg => formatDigits(lg) === leftKey)) {
+        row.leftGroups.push(p.leftDigits);
+      }
+    }
+    const merged = [...mergedMap.values()];
+
+    // Check if any combination is winning
+    const hasWinner = merged.some(row =>
+      row.topDigits.includes(topLast) &&
+      row.leftGroups.some(lg => lg.includes(leftLast)),
     );
 
-    const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
-
-    // Build digit spans with hit/near highlighting
-    function digitSpans(digits: Set<number>, currentLast: number, nearSet: Set<number>, otherHit: boolean): HTMLElement {
-      const span = el('span', 'digit-summary-digits');
-      span.appendChild(text('['));
-      const arr = sorted(digits);
-      arr.forEach((d, i) => {
-        const dSpan = document.createElement('span');
-        dSpan.textContent = String(d);
-        if (d === currentLast && otherHit) {
-          dSpan.className = 'digit-hit';
-        } else if (nearSet.has(d) && otherHit) {
-          dSpan.className = 'digit-near';
-        }
-        span.appendChild(dSpan);
-        if (i < arr.length - 1) span.appendChild(text(', '));
-      });
-      span.appendChild(text(']'));
-      return span;
-    }
-
     const boardClasses = ['digit-summary-board'];
-    if (isWinner) boardClasses.push('has-winner');
-    else if (isNear) boardClasses.push('has-near');
+    if (hasWinner) boardClasses.push('has-winner');
 
     const item = el('div', boardClasses.join(' '));
     item.appendChild(el('div', 'digit-summary-name', [board.config.name]));
 
-    if (isWinner) {
+    if (hasWinner) {
       const payout = board.config.payouts?.[gameState.quarter];
       const winText = payout != null ? `IN THE MONEY — $${payout}` : 'IN THE MONEY';
       item.appendChild(el('div', 'digit-summary-status winner', [winText]));
-    } else if (isNear) {
-      item.appendChild(el('div', 'digit-summary-status near', ['Near miss!']));
     }
 
-    const topRow = el('div', 'digit-summary-row');
-    topRow.appendChild(el('span', 'digit-summary-team', [board.config.topTeam + ':']));
-    topRow.appendChild(digitSpans(topDigits, topLast, topNearDigits, leftDigits.has(leftLast)));
-    item.appendChild(topRow);
+    // Render merged rows
+    const pairsContainer = el('div', 'digit-summary-pairs');
+    for (const row of merged) {
+      const isHit = row.topDigits.includes(topLast) &&
+        row.leftGroups.some(lg => lg.includes(leftLast));
+      const pairEl = el('div', `digit-summary-pair${isHit ? ' pair-hit' : ''}`);
 
-    const leftRow = el('div', 'digit-summary-row');
-    leftRow.appendChild(el('span', 'digit-summary-team', [board.config.leftTeam + ':']));
-    leftRow.appendChild(digitSpans(leftDigits, leftLast, leftNearDigits, topDigits.has(topLast)));
-    item.appendChild(leftRow);
+      // Top side
+      pairEl.appendChild(el('span', 'ds-team', [topShort]));
+      pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.topDigits)]));
+
+      pairEl.appendChild(el('span', 'ds-sep', ['/']));
+
+      // Left side: single digit or [list]
+      pairEl.appendChild(el('span', 'ds-team', [leftShort]));
+      if (row.leftGroups.length === 1) {
+        pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.leftGroups[0])]));
+      } else {
+        const sorted = row.leftGroups
+          .map(lg => formatDigits(lg))
+          .sort((a, b) => parseInt(a) - parseInt(b));
+        pairEl.appendChild(el('span', 'ds-digit', ['[' + sorted.join(', ') + ']']));
+      }
+
+      pairsContainer.appendChild(pairEl);
+    }
+    item.appendChild(pairsContainer);
 
     items.push(item);
   }
@@ -637,7 +718,7 @@ function renderDigitSummary(): HTMLElement | null {
   if (items.length === 0) return null;
 
   const section = el('div', 'digit-summary');
-  section.appendChild(el('div', 'digit-summary-title', ['My Digits This Quarter']));
+  section.appendChild(el('div', 'digit-summary-title', ['My Squares This Quarter']));
   const grid = el('div', 'digit-summary-grid');
   for (const item of items) grid.appendChild(item);
   section.appendChild(grid);
@@ -649,6 +730,23 @@ function renderDigitSummary(): HTMLElement | null {
 function renderScoringHeader(): HTMLElement {
   const header = el('div', 'scoring-header');
 
+  // Determine team labels (use first board's teams or fallback)
+  const topTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
+  const leftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
+
+  // Score inputs (created first so quarter buttons can read them)
+  const topInput = input('number', { className: 'score-input', value: String(gameState.score.top) });
+  topInput.min = '0';
+  const leftInput = input('number', { className: 'score-input', value: String(gameState.score.left) });
+  leftInput.min = '0';
+
+  /** Sync score input values into gameState */
+  function syncScore(): void {
+    gameState.score.top = parseInt(topInput.value) || 0;
+    gameState.score.left = parseInt(leftInput.value) || 0;
+    saveGameState();
+  }
+
   // Quarter bar
   const qBar = el('div', 'quarter-bar');
   const qLabel = el('span', 'quarter-label', [QUARTER_LABELS[gameState.quarter]]);
@@ -656,13 +754,17 @@ function renderScoringHeader(): HTMLElement {
 
   if (gameState.quarter > 0) {
     qActions.appendChild(btn('Prev Quarter', 'btn btn-secondary btn-sm', () => {
+      syncScore();
       gameState.quarter--;
+      saveGameState();
       render();
     }));
   }
   if (gameState.quarter < 3) {
     qActions.appendChild(btn('Next Quarter', 'btn btn-secondary btn-sm', () => {
+      syncScore();
       gameState.quarter++;
+      saveGameState();
       render();
     }));
   }
@@ -671,17 +773,8 @@ function renderScoringHeader(): HTMLElement {
   qBar.appendChild(qActions);
   header.appendChild(qBar);
 
-  // Determine team labels (use first board's teams or fallback)
-  const topTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
-  const leftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
-
-  // Score inputs
+  // Score row
   const scoreRow = el('div', 'score-row');
-
-  const topInput = input('number', { className: 'score-input', value: String(gameState.score.top) });
-  topInput.min = '0';
-  const leftInput = input('number', { className: 'score-input', value: String(gameState.score.left) });
-  leftInput.min = '0';
 
   const topGroup = el('div', 'score-group', [
     el('label', '', [topTeam]),
@@ -696,16 +789,14 @@ function renderScoringHeader(): HTMLElement {
   ]);
 
   const updateBtn = btn('Update', 'btn btn-primary btn-sm', () => {
-    gameState.score.top = parseInt(topInput.value) || 0;
-    gameState.score.left = parseInt(leftInput.value) || 0;
+    syncScore();
     render();
   });
 
   // Also update on enter key
   const onEnter = (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
-      gameState.score.top = parseInt(topInput.value) || 0;
-      gameState.score.left = parseInt(leftInput.value) || 0;
+      syncScore();
       render();
     }
   };
@@ -1048,6 +1139,7 @@ function init(): void {
     saveToLocalStorage();
     activeTab = 'scoring';
   }
+  loadGameState();
   render();
 }
 
