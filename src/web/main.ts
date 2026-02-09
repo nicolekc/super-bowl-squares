@@ -15,7 +15,7 @@ import {
 const QUARTER_LABELS = ['Q1', 'Q2', 'Q3', 'Final'];
 const LS_KEY = 'sb-squares-data';
 const LS_STATE_KEY = 'sb-squares-state';
-const LS_DEFAULTS_HASH_KEY = 'sb-squares-defaults-hash';
+const LS_DEFAULTS_HASH_KEY = 'sb-squares-defaults-hash-v2';
 
 // ── App State ─────────────────────────────────────────────────────────
 
@@ -986,20 +986,21 @@ function renderScoringHeader(): HTMLElement {
 function renderBoardCard(board: Board): HTMLElement {
   const card = el('div', 'board-card');
 
-  const configParts = [
+  const configSummary = [
     `${board.config.cols}x${board.config.rows}`,
     board.config.reroll ? 'reroll' : '',
     board.config.buyIn ? `$${board.config.buyIn}` : '',
-  ].filter(Boolean);
-  if (board.config.payouts && board.config.payouts.length > 0) {
-    configParts.push('Payouts: ' + board.config.payouts.map(p => `$${p}`).join('/'));
-  }
-  const configSummary = configParts.join(' | ');
+  ].filter(Boolean).join(' | ');
 
   card.appendChild(el('h3', '', [board.config.name]));
   card.appendChild(el('div', 'card-meta', [
     `${board.config.topTeam} vs ${board.config.leftTeam} — ${configSummary}`,
   ]));
+  if (board.config.payouts && board.config.payouts.length > 0) {
+    const payoutLabels = ['Q1', 'Q2', 'Q3', 'Final'];
+    const payoutText = board.config.payouts.map((p, i) => `${payoutLabels[i] || `Q${i+1}`}: $${p}`).join(' | ');
+    card.appendChild(el('div', 'card-meta', [payoutText]));
+  }
 
   if (board.fullBoard) {
     card.appendChild(renderFullBoardGrid(board));
@@ -1240,6 +1241,7 @@ function init(): void {
   const savedHash = localStorage.getItem(LS_DEFAULTS_HASH_KEY);
   console.log('[SB-Squares] defaults hash:', defaultsHash, 'saved hash:', savedHash, 'match:', savedHash === defaultsHash);
   console.log('[SB-Squares] has payouts in defaults:', DEFAULT_BOARDS.includes('Payouts'));
+  console.log('[SB-Squares] DEFAULT_BOARDS first 500 chars:', DEFAULT_BOARDS.substring(0, 500));
 
   // If the default boards data changed (or hash not yet stored), reload defaults but keep game state
   if (savedHash !== defaultsHash) {
@@ -1248,6 +1250,7 @@ function init(): void {
     localStorage.setItem(LS_DEFAULTS_HASH_KEY, defaultsHash);
     activeTab = 'scoring';
     loadGameState();
+    console.log('[SB-Squares] RELOADED defaults. boards:', boards.length, 'payouts:', boards.map(b => b.config.name + ': ' + JSON.stringify(b.config.payouts)));
     render();
     return;
   }
@@ -1269,6 +1272,7 @@ function init(): void {
   }
   localStorage.setItem(LS_DEFAULTS_HASH_KEY, defaultsHash);
   loadGameState();
+  console.log('[SB-Squares] boards loaded:', boards.length, 'payouts:', boards.map(b => b.config.name + ': ' + JSON.stringify(b.config.payouts)));
   render();
 }
 
