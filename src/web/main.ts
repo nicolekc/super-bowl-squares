@@ -15,6 +15,7 @@ import {
 const QUARTER_LABELS = ['Q1', 'Q2', 'Q3', 'Final'];
 const LS_KEY = 'sb-squares-data';
 const LS_STATE_KEY = 'sb-squares-state';
+const LS_DEFAULTS_HASH_KEY = 'sb-squares-defaults-hash';
 
 // ── App State ─────────────────────────────────────────────────────────
 
@@ -1219,7 +1220,30 @@ function renderFullBoardSummary(board: Board): HTMLElement {
 
 // ── Initialize ────────────────────────────────────────────────────────
 
+/** Simple string hash for change detection. */
+function simpleHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return h.toString(36);
+}
+
 function init(): void {
+  const defaultsHash = simpleHash(DEFAULT_BOARDS);
+  const savedHash = localStorage.getItem(LS_DEFAULTS_HASH_KEY);
+
+  // If the default boards data changed, reload defaults but keep game state
+  if (savedHash !== null && savedHash !== defaultsHash) {
+    boards = parseBoards(DEFAULT_BOARDS);
+    saveToLocalStorage();
+    localStorage.setItem(LS_DEFAULTS_HASH_KEY, defaultsHash);
+    activeTab = 'scoring';
+    loadGameState();
+    render();
+    return;
+  }
+
   // Load from localStorage if available, otherwise use default boards
   const saved = loadFromLocalStorage();
   if (saved) {
@@ -1235,6 +1259,7 @@ function init(): void {
     saveToLocalStorage();
     activeTab = 'scoring';
   }
+  localStorage.setItem(LS_DEFAULTS_HASH_KEY, defaultsHash);
   loadGameState();
   render();
 }
