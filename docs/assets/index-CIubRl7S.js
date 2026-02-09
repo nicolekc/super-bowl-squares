@@ -34,6 +34,7 @@ Nathan Dowland, Shannon, Tammy Westberg, Lance, RC, Dirty Doug, Isaac S, Curt, J
 ---
 Super Bowl LX $25 5x10 full
 New England Patriots (top) vs Seattle Seahawks (left)
+Payouts 250 250 250 490
 Top New England Patriots 65 72 49 30 81
 Left Seattle Seahawks 4 2 8 7 3 9 5 1 0 6
 Smash, BroncosMom, Mitsman, Poppy, caron
@@ -49,6 +50,7 @@ Takeo, Nik, caron, Tasha, Beau's
 ---
 Super Bowl LX $50 5x5 reroll full
 New England Patriots (top) vs Seattle Seahawks (left)
+Payouts 310 310 310 310
 Q1 Top 86 71 30 45 92, Left 16 97 04 52 83
 Q2 Top 45 90 32 76 18, Left 95 76 38 21 04
 Q3 Top 19 47 36 05 28, Left 12 80 74 93 65
@@ -61,6 +63,7 @@ Takeo, Dylan, Nik, Brad, BroncosMom
 ---
 Super Bowl LX $50 5x5 full
 New England Patriots (top) vs Seattle Seahawks (left)
+Payouts 310 310 310 310
 Top New England Patriots 02 17 36 85 49
 Left Seattle Seahawks 64 15 72 89 30
 Nik, Takeo, Purple Peopl, Wsnider, Beau's
@@ -71,6 +74,7 @@ Smash, SEAHAWKS!, Beau's, Meredith, nicolekc
 ---
 Super Bowl LX $10 10x10 full
 New England Patriots (top) vs Seattle Seahawks (left)
+Payouts 200 200 200 390
 Top New England Patriots 9 3 6 0 7 5 4 2 8 1
 Left Seattle Seahawks 4 5 8 3 7 6 0 9 2 1
 Smash, BroncosMom, BroncosMom, Beau's, caron, Eric, Meredith, Mitsman, Nik, SEAHAWKS!
