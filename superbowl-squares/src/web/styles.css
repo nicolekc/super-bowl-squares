@@ -377,8 +377,11 @@ body {
 .cell-mine {
   font-weight: 700 !important;
   text-decoration: underline;
-  border: 3px solid rgba(255, 255, 255, 0.25) !important;
   background: rgba(255, 255, 255, 0.10) !important;
+  outline: 2.5px solid rgba(255, 255, 255, 0.25);
+  outline-offset: -1px;
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Status text rows ──────────────────────────────────── */
