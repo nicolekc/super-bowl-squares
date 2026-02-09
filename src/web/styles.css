@@ -329,11 +329,6 @@ body {
   padding-left: 0.75rem;
 }
 
-.digit-summary-board.has-near {
-  border-left: 3px solid var(--near);
-  padding-left: 0.75rem;
-}
-
 .digit-summary-name {
   font-size: 0.875rem;
   font-weight: 600;
@@ -351,20 +346,36 @@ body {
   color: var(--win);
 }
 
-.digit-summary-status.near {
-  color: var(--near);
+.digit-summary-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
 }
 
-.digit-summary-row {
+.digit-summary-pair {
   display: flex;
-  gap: 0.5rem;
   align-items: center;
   white-space: nowrap;
+  font-size: 0.8125rem;
 }
 
-.digit-summary-team {
-  font-size: 0.8125rem;
+.digit-summary-pair.pair-hit {
+  color: var(--win);
+  font-weight: 700;
+}
+
+.digit-summary-team-short {
   color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.digit-summary-pair.pair-hit .digit-summary-team-short {
+  color: var(--win);
+}
+
+.digit-summary-sep {
+  color: var(--muted);
+  margin: 0 0.125rem;
 }
 
 .digit-summary-digits {
@@ -374,12 +385,8 @@ body {
   color: var(--primary);
 }
 
-.digit-summary-digits .digit-hit {
+.digit-summary-pair.pair-hit .digit-summary-digits {
   color: var(--win);
-}
-
-.digit-summary-digits .digit-near {
-  color: var(--near);
 }
 
 /* ── Board Card ────────────────────────────────────────── */
