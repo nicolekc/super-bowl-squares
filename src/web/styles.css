@@ -564,9 +564,14 @@ body {
   color: var(--near) !important;
 }
 
-.cell-mine {
+.grid-table td.cell-mine {
   font-weight: 700 !important;
   text-decoration: underline;
+  background: rgba(255, 255, 255, 0.10) !important;
+  outline: 2.5px solid rgba(255, 255, 255, 0.25) !important;
+  outline-offset: -1px;
+  position: relative;
+  z-index: 1;
 }
 
 .cell-clickable {
