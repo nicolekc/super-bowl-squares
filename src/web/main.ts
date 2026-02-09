@@ -2,11 +2,11 @@
 // Pure DOM manipulation, no frameworks. Imports from the core library.
 
 import {
-  Board, BoardConfig, GameState, AxisSize, SquareStatus, NearMiss,
+  Board, BoardConfig, GameState, AxisSize, SquareStatus, NearMiss, Score,
   MySquare, FullBoardData, QuarterDigits,
   parseBoards, serializeBoards,
   checkAllMySquares, getFullBoardCellStatuses, quarterIndex,
-  formatDigits, lastDigit,
+  formatDigits, lastDigit, findPosition,
 } from '../core/index.js';
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -20,6 +20,9 @@ const LS_STATE_KEY = 'sb-squares-state';
 let boards: Board[] = [];
 let gameState: GameState = { quarter: 0, score: { top: 0, left: 0 } };
 let activeTab: 'setup' | 'scoring' = 'setup';
+
+/** Scores locked in at the end of each quarter (index 0-3). null = not yet played. */
+let quarterScores: (Score | null)[] = [null, null, null, null];
 
 // ── DOM Helpers ───────────────────────────────────────────────────────
 
@@ -96,16 +99,14 @@ function saveToLocalStorage(): void {
     return;
   }
   localStorage.setItem(LS_KEY, serializeBoards(boards));
-  localStorage.setItem(LS_STATE_KEY, JSON.stringify({
-    quarter: gameState.quarter,
-    score: gameState.score,
-  }));
+  saveGameState();
 }
 
 function saveGameState(): void {
   localStorage.setItem(LS_STATE_KEY, JSON.stringify({
     quarter: gameState.quarter,
     score: gameState.score,
+    quarterScores,
   }));
 }
 
@@ -121,6 +122,14 @@ function loadGameState(): void {
     if (typeof s.quarter === 'number') gameState.quarter = s.quarter;
     if (s.score && typeof s.score.top === 'number') gameState.score.top = s.score.top;
     if (s.score && typeof s.score.left === 'number') gameState.score.left = s.score.left;
+    if (Array.isArray(s.quarterScores)) {
+      for (let i = 0; i < 4; i++) {
+        const qs = s.quarterScores[i];
+        if (qs && typeof qs.top === 'number' && typeof qs.left === 'number') {
+          quarterScores[i] = { top: qs.top, left: qs.left };
+        }
+      }
+    }
   } catch {
     // ignore corrupt state
   }
@@ -554,6 +563,9 @@ function renderScoringPanel(): HTMLElement {
   const panel = el('div', 'scoring-panel');
   panel.appendChild(renderScoringHeader());
 
+  const pastWinners = renderPastQuarterWinners();
+  if (pastWinners) panel.appendChild(pastWinners);
+
   const digitSummary = renderDigitSummary();
   if (digitSummary) panel.appendChild(digitSummary);
 
@@ -562,6 +574,82 @@ function renderScoringPanel(): HTMLElement {
   }
 
   return panel;
+}
+
+// ── Past Quarter Winners ──────────────────────────────────────────────
+
+function renderPastQuarterWinners(): HTMLElement | null {
+  // Only show if at least one past quarter has been scored
+  const pastQuarters = quarterScores.slice(0, gameState.quarter).filter(Boolean);
+  if (pastQuarters.length === 0) return null;
+
+  const section = el('div', 'past-winners');
+  section.appendChild(el('div', 'past-winners-title', ['Quarter Results']));
+
+  for (let q = 0; q < gameState.quarter; q++) {
+    const qs = quarterScores[q];
+    if (!qs) continue;
+
+    const topTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
+    const leftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
+    const topShort = shortTeamName(topTeam);
+    const leftShort = shortTeamName(leftTeam);
+    const topD = lastDigit(qs.top);
+    const leftD = lastDigit(qs.left);
+
+    const qRow = el('div', 'past-winners-quarter');
+    qRow.appendChild(el('span', 'pw-label', [QUARTER_LABELS[q]]));
+    qRow.appendChild(el('span', 'pw-score', [
+      `${topShort} ${qs.top} - ${leftShort} ${qs.left}`,
+    ]));
+
+    // Find winners across all boards
+    const winnerNames: string[] = [];
+    for (const board of boards) {
+      const qi = quarterIndex(board, q);
+      const mineSet = board.fullBoard
+        ? new Set(board.fullBoard.mySquareNames.map(n => n.toLowerCase()))
+        : new Set<string>();
+
+      if (board.fullBoard) {
+        const qn = board.fullBoard.quarters[qi];
+        const winCol = findPosition(qn.topNumbers, topD);
+        const winRow = findPosition(qn.leftNumbers, leftD);
+        if (winCol >= 0 && winRow >= 0) {
+          const owner = board.fullBoard.grid[winRow]?.[winCol] ?? '???';
+          const isMine = mineSet.has(owner.toLowerCase());
+          const payout = board.config.payouts?.[q];
+          let entry = owner;
+          if (payout != null) entry += ` ($${payout})`;
+          if (isMine) entry = '\u2605 ' + entry;
+          winnerNames.push(entry);
+        }
+      } else if (board.mySquares) {
+        const digits = board.mySquares.map(sq => sq.quarters[qi]);
+        for (const d of digits) {
+          if (d.topDigits.includes(topD) && d.leftDigits.includes(leftD)) {
+            const payout = board.config.payouts?.[q];
+            let entry = `${board.config.name}`;
+            if (payout != null) entry += ` ($${payout})`;
+            entry = '\u2605 ' + entry;
+            winnerNames.push(entry);
+            break;
+          }
+        }
+      }
+    }
+
+    if (winnerNames.length > 0) {
+      for (const name of winnerNames) {
+        const isMine = name.startsWith('\u2605');
+        qRow.appendChild(el('span', isMine ? 'pw-winner pw-mine' : 'pw-winner', [name]));
+      }
+    }
+
+    section.appendChild(qRow);
+  }
+
+  return section;
 }
 
 // ── NFL Team Abbreviations ────────────────────────────────────────────
@@ -763,6 +851,8 @@ function renderScoringHeader(): HTMLElement {
   if (gameState.quarter < 3) {
     qActions.appendChild(btn('Next Quarter', 'btn btn-secondary btn-sm', () => {
       syncScore();
+      // Snapshot this quarter's final score
+      quarterScores[gameState.quarter] = { ...gameState.score };
       gameState.quarter++;
       saveGameState();
       render();
