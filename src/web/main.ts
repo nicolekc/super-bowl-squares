@@ -840,6 +840,8 @@ function renderDigitSummary(): HTMLElement | null {
       board.config.reroll ? 'reroll' : '',
       board.config.buyIn ? `$${board.config.buyIn}` : '',
     ].filter(Boolean);
+    const qPayout = board.config.payouts?.[gameState.quarter];
+    if (qPayout != null) detailParts.push(`$${qPayout} this quarter`);
     item.appendChild(el('div', 'digit-summary-detail', [detailParts.join(' · ')]));
 
     if (hasWinner) {
@@ -984,11 +986,15 @@ function renderScoringHeader(): HTMLElement {
 function renderBoardCard(board: Board): HTMLElement {
   const card = el('div', 'board-card');
 
-  const configSummary = [
+  const configParts = [
     `${board.config.cols}x${board.config.rows}`,
     board.config.reroll ? 'reroll' : '',
     board.config.buyIn ? `$${board.config.buyIn}` : '',
-  ].filter(Boolean).join(' | ');
+  ].filter(Boolean);
+  if (board.config.payouts && board.config.payouts.length > 0) {
+    configParts.push('Payouts: ' + board.config.payouts.map(p => `$${p}`).join('/'));
+  }
+  const configSummary = configParts.join(' | ');
 
   card.appendChild(el('h3', '', [board.config.name]));
   card.appendChild(el('div', 'card-meta', [
@@ -1232,6 +1238,8 @@ function simpleHash(s: string): string {
 function init(): void {
   const defaultsHash = simpleHash(DEFAULT_BOARDS);
   const savedHash = localStorage.getItem(LS_DEFAULTS_HASH_KEY);
+  console.log('[SB-Squares] defaults hash:', defaultsHash, 'saved hash:', savedHash, 'match:', savedHash === defaultsHash);
+  console.log('[SB-Squares] has payouts in defaults:', DEFAULT_BOARDS.includes('Payouts'));
 
   // If the default boards data changed (or hash not yet stored), reload defaults but keep game state
   if (savedHash !== defaultsHash) {
