@@ -742,11 +742,10 @@ function scoreForBoard(board: Board, score: Score): Score {
 
 // ── Digit Summary ──────────────────────────────────────────────────────
 
-/** A merged row: one top-digit group with all its associated left-digit groups */
-interface MergedRow {
-  topKey: string;
-  topDigits: number[];
-  leftGroups: number[][];  // each entry is a unique set of left digits
+/** A display row after merging: teamA has the shared digit, teamB has the merged groups */
+interface DisplayRow {
+  teamA: string; digitsA: number[];
+  teamB: string; digitGroupsB: number[][];
 }
 
 function renderDigitSummary(): HTMLElement | null {
@@ -770,13 +769,10 @@ function renderDigitSummary(): HTMLElement | null {
     const boardLeftAbbr = shortTeamName(board.config.leftTeam);
     const isSwapped = boardTopAbbr === canonLeftShort && boardLeftAbbr === canonTopShort;
 
-    // When swapped: board's "top" axis = canonical "left" score,
-    //               board's "left" axis = canonical "top" score.
-    // For display we always show canonical order (canonTop first, canonLeft second).
-    // "firstDigits" = digits along the canonical-top axis
-    // "secondDigits" = digits along the canonical-left axis
-    const scoreFirst = isSwapped ? leftLast : topLast;   // last digit for the first (canonical-top) team
-    const scoreSecond = isSwapped ? topLast : leftLast;   // last digit for the second (canonical-left) team
+    // gameState.score.top/left are ALWAYS in canonical order (top=first board's top team).
+    // The swap only affects how we read this board's axis digits (handled in rawPairs below).
+    const scoreFirst = topLast;   // canonical-top team's last digit
+    const scoreSecond = leftLast; // canonical-left team's last digit
 
     // Collect raw pairs in canonical order: { firstDigits, secondDigits }
     const rawPairs: { firstDigits: number[]; secondDigits: number[] }[] = [];
@@ -808,27 +804,80 @@ function renderDigitSummary(): HTMLElement | null {
 
     if (rawPairs.length === 0) continue;
 
-    // Group by first (canonical-top) digits, merge second (canonical-left) digits
-    const mergedMap = new Map<string, MergedRow>();
+    // Two-pass merge: group by whichever team has a shared digit.
+    // Pass 1: group by first team (canonical-top), merge second team digits
+    const byFirst = new Map<string, { firstDigits: number[]; leftGroups: number[][] }>();
     for (const p of rawPairs) {
-      const topKey = formatDigits(p.firstDigits);
-      let row = mergedMap.get(topKey);
+      const key = formatDigits(p.firstDigits);
+      let row = byFirst.get(key);
       if (!row) {
-        row = { topKey, topDigits: p.firstDigits, leftGroups: [] };
-        mergedMap.set(topKey, row);
+        row = { firstDigits: p.firstDigits, leftGroups: [] };
+        byFirst.set(key, row);
       }
-      const leftKey = formatDigits(p.secondDigits);
-      if (!row.leftGroups.some(lg => formatDigits(lg) === leftKey)) {
+      const lk = formatDigits(p.secondDigits);
+      if (!row.leftGroups.some(lg => formatDigits(lg) === lk)) {
         row.leftGroups.push(p.secondDigits);
       }
     }
-    const merged = [...mergedMap.values()];
+
+    // Pass 2: entries that weren't merged in pass 1 (single second-team digit group),
+    // try grouping by second team digit instead, flipping the display order.
+    const display: DisplayRow[] = [];
+
+    // Collect singles for reverse merge attempt
+    const singles: { firstKey: string; firstDigits: number[]; secondDigits: number[] }[] = [];
+    for (const [firstKey, row] of byFirst) {
+      if (row.leftGroups.length > 1) {
+        // Already merged by first team — keep as-is
+        display.push({
+          teamA: canonTopShort, digitsA: row.firstDigits,
+          teamB: canonLeftShort, digitGroupsB: row.leftGroups,
+        });
+      } else {
+        singles.push({ firstKey, firstDigits: row.firstDigits, secondDigits: row.leftGroups[0] });
+      }
+    }
+
+    // Group singles by second team digits
+    const bySecond = new Map<string, { secondDigits: number[]; firstGroups: number[][] }>();
+    for (const s of singles) {
+      const key = formatDigits(s.secondDigits);
+      let row = bySecond.get(key);
+      if (!row) {
+        row = { secondDigits: s.secondDigits, firstGroups: [] };
+        bySecond.set(key, row);
+      }
+      const fk = formatDigits(s.firstDigits);
+      if (!row.firstGroups.some(fg => formatDigits(fg) === fk)) {
+        row.firstGroups.push(s.firstDigits);
+      }
+    }
+
+    for (const [, row] of bySecond) {
+      if (row.firstGroups.length > 1) {
+        // Merged by second team — display with second team first
+        display.push({
+          teamA: canonLeftShort, digitsA: row.secondDigits,
+          teamB: canonTopShort, digitGroupsB: row.firstGroups,
+        });
+      } else {
+        // No merge possible — display in canonical order
+        display.push({
+          teamA: canonTopShort, digitsA: row.firstGroups[0],
+          teamB: canonLeftShort, digitGroupsB: [row.secondDigits],
+        });
+      }
+    }
 
     // Check if any combination is winning
-    const hasWinner = merged.some(row =>
-      row.topDigits.includes(scoreFirst) &&
-      row.leftGroups.some(lg => lg.includes(scoreSecond)),
-    );
+    function isWinningRow(row: DisplayRow): boolean {
+      const aIsTop = row.teamA === canonTopShort;
+      const aScore = aIsTop ? scoreFirst : scoreSecond;
+      const bScore = aIsTop ? scoreSecond : scoreFirst;
+      return row.digitsA.includes(aScore) &&
+        row.digitGroupsB.some(dg => dg.includes(bScore));
+    }
+    const hasWinner = display.some(isWinningRow);
 
     const boardClasses = ['digit-summary-board'];
     if (hasWinner) boardClasses.push('has-winner');
@@ -850,26 +899,25 @@ function renderDigitSummary(): HTMLElement | null {
       item.appendChild(el('div', 'digit-summary-status winner', [winText]));
     }
 
-    // Render merged rows — always in canonical team order
+    // Render display rows
     const pairsContainer = el('div', 'digit-summary-pairs');
-    for (const row of merged) {
-      const isHit = row.topDigits.includes(scoreFirst) &&
-        row.leftGroups.some(lg => lg.includes(scoreSecond));
+    for (const row of display) {
+      const isHit = isWinningRow(row);
       const pairEl = el('div', `digit-summary-pair${isHit ? ' pair-hit' : ''}`);
 
-      // First team (canonical top)
-      pairEl.appendChild(el('span', 'ds-team', [canonTopShort]));
-      pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.topDigits)]));
+      // Team A (the shared/grouped side)
+      pairEl.appendChild(el('span', 'ds-team', [row.teamA]));
+      pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.digitsA)]));
 
       pairEl.appendChild(el('span', 'ds-sep', ['/']));
 
-      // Second team (canonical left): single digit or [list]
-      pairEl.appendChild(el('span', 'ds-team', [canonLeftShort]));
-      if (row.leftGroups.length === 1) {
-        pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.leftGroups[0])]));
+      // Team B: single digit group or [merged list]
+      pairEl.appendChild(el('span', 'ds-team', [row.teamB]));
+      if (row.digitGroupsB.length === 1) {
+        pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.digitGroupsB[0])]));
       } else {
-        const sorted = row.leftGroups
-          .map(lg => formatDigits(lg))
+        const sorted = row.digitGroupsB
+          .map(dg => formatDigits(dg))
           .sort((a, b) => parseInt(a) - parseInt(b));
         pairEl.appendChild(el('span', 'ds-digit', ['[' + sorted.join(', ') + ']']));
       }
@@ -1239,9 +1287,6 @@ function simpleHash(s: string): string {
 function init(): void {
   const defaultsHash = simpleHash(DEFAULT_BOARDS);
   const savedHash = localStorage.getItem(LS_DEFAULTS_HASH_KEY);
-  console.log('[SB-Squares] defaults hash:', defaultsHash, 'saved hash:', savedHash, 'match:', savedHash === defaultsHash);
-  console.log('[SB-Squares] has payouts in defaults:', DEFAULT_BOARDS.includes('Payouts'));
-  console.log('[SB-Squares] DEFAULT_BOARDS first 500 chars:', DEFAULT_BOARDS.substring(0, 500));
 
   // If the default boards data changed (or hash not yet stored), reload defaults but keep game state
   if (savedHash !== defaultsHash) {
@@ -1250,7 +1295,6 @@ function init(): void {
     localStorage.setItem(LS_DEFAULTS_HASH_KEY, defaultsHash);
     activeTab = 'scoring';
     loadGameState();
-    console.log('[SB-Squares] RELOADED defaults. boards:', boards.length, 'payouts:', boards.map(b => b.config.name + ': ' + JSON.stringify(b.config.payouts)));
     render();
     return;
   }
@@ -1272,7 +1316,6 @@ function init(): void {
   }
   localStorage.setItem(LS_DEFAULTS_HASH_KEY, defaultsHash);
   loadGameState();
-  console.log('[SB-Squares] boards loaded:', boards.length, 'payouts:', boards.map(b => b.config.name + ': ' + JSON.stringify(b.config.payouts)));
   render();
 }
 
