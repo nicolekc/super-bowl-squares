@@ -26,6 +26,8 @@ let activeTab: 'setup' | 'scoring' = 'setup';
 /** Scores locked in at the end of each quarter (index 0-3). null = not yet played. */
 let quarterScores: (Score | null)[] = [null, null, null, null];
 let gameFinalized = false;
+/** Preview last-digits for "what if" highlighting in the digit summary. */
+let previewDigits: { top: number; left: number } | null = null;
 
 // ── DOM Helpers ───────────────────────────────────────────────────────
 
@@ -754,8 +756,10 @@ interface DisplayRow {
 
 function renderDigitSummary(): HTMLElement | null {
   const items: HTMLElement[] = [];
-  const topLast = lastDigit(gameState.score.top);
-  const leftLast = lastDigit(gameState.score.left);
+  const realTopLast = lastDigit(gameState.score.top);
+  const realLeftLast = lastDigit(gameState.score.left);
+  const topLast = previewDigits ? previewDigits.top : realTopLast;
+  const leftLast = previewDigits ? previewDigits.left : realLeftLast;
 
   // Canonical team order from the scoring header (first board)
   const canonTopTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
@@ -936,7 +940,48 @@ function renderDigitSummary(): HTMLElement | null {
   if (items.length === 0) return null;
 
   const section = el('div', 'digit-summary');
-  section.appendChild(el('div', 'digit-summary-title', ['My Squares This Quarter']));
+  const titleRow = el('div', 'digit-summary-header');
+  titleRow.appendChild(el('div', 'digit-summary-title', ['My Squares This Quarter']));
+
+  // Preview digit picker
+  const preview = el('div', 'preview-picker');
+  function digitBtn(team: 'top' | 'left', digit: number): HTMLElement {
+    const isActive = previewDigits && previewDigits[team] === digit;
+    const b = btn(String(digit), `preview-digit${isActive ? ' active' : ''}`, () => {
+      const current = previewDigits ?? { top: realTopLast, left: realLeftLast };
+      previewDigits = { ...current, [team]: digit };
+      render();
+    });
+    return b;
+  }
+
+  const topRow = el('div', 'preview-row');
+  topRow.appendChild(el('span', 'preview-label', [canonTopShort]));
+  for (let d = 0; d < 10; d++) topRow.appendChild(digitBtn('top', d));
+  preview.appendChild(topRow);
+
+  const leftRow = el('div', 'preview-row');
+  leftRow.appendChild(el('span', 'preview-label', [canonLeftShort]));
+  for (let d = 0; d < 10; d++) leftRow.appendChild(digitBtn('left', d));
+  preview.appendChild(leftRow);
+
+  if (previewDigits) {
+    const clearBtn = btn('\u00d7', 'preview-clear', () => {
+      previewDigits = null;
+      render();
+    });
+    preview.appendChild(clearBtn);
+  }
+
+  titleRow.appendChild(preview);
+  section.appendChild(titleRow);
+
+  if (previewDigits) {
+    section.appendChild(el('div', 'preview-notice', [
+      `Preview: ${canonTopShort} ${previewDigits.top} / ${canonLeftShort} ${previewDigits.left}`,
+    ]));
+  }
+
   const grid = el('div', 'digit-summary-grid');
   for (const item of items) grid.appendChild(item);
   section.appendChild(grid);
