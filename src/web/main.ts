@@ -611,10 +611,15 @@ function renderPastQuarterWinners(): HTMLElement | null {
         ? new Set(board.fullBoard.mySquareNames.map(n => n.toLowerCase()))
         : new Set<string>();
 
+      // Map canonical scores to this board's axes
+      const boardScore = scoreForBoard(board, qs);
+      const boardTopD = lastDigit(boardScore.top);
+      const boardLeftD = lastDigit(boardScore.left);
+
       if (board.fullBoard) {
         const qn = board.fullBoard.quarters[qi];
-        const winCol = findPosition(qn.topNumbers, topD);
-        const winRow = findPosition(qn.leftNumbers, leftD);
+        const winCol = findPosition(qn.topNumbers, boardTopD);
+        const winRow = findPosition(qn.leftNumbers, boardLeftD);
         if (winCol >= 0 && winRow >= 0) {
           const owner = board.fullBoard.grid[winRow]?.[winCol] ?? '???';
           const isMine = mineSet.has(owner.toLowerCase());
@@ -627,7 +632,7 @@ function renderPastQuarterWinners(): HTMLElement | null {
       } else if (board.mySquares) {
         const digits = board.mySquares.map(sq => sq.quarters[qi]);
         for (const d of digits) {
-          if (d.topDigits.includes(topD) && d.leftDigits.includes(leftD)) {
+          if (d.topDigits.includes(boardTopD) && d.leftDigits.includes(boardLeftD)) {
             const payout = board.config.payouts?.[q];
             let entry = `${board.config.name}`;
             if (payout != null) entry += ` ($${payout})`;
@@ -693,6 +698,44 @@ function shortTeamName(fullName: string): string {
   const abbrev = NFL_ABBREVS[fullName.toLowerCase()];
   if (abbrev) return abbrev;
   return fullName;
+}
+
+/**
+ * Returns true if this board's teams are swapped relative to the
+ * canonical order (boards[0]). When swapped, the board's "top" axis
+ * corresponds to the canonical "left" team and vice versa.
+ */
+function isBoardSwapped(board: Board): boolean {
+  if (boards.length === 0) return false;
+  const canonTopAbbr = shortTeamName(boards[0].config.topTeam);
+  const canonLeftAbbr = shortTeamName(boards[0].config.leftTeam);
+  const boardTopAbbr = shortTeamName(board.config.topTeam);
+  const boardLeftAbbr = shortTeamName(board.config.leftTeam);
+  return boardTopAbbr === canonLeftAbbr && boardLeftAbbr === canonTopAbbr;
+}
+
+/**
+ * Returns a GameState with scores mapped correctly for the given board.
+ * If the board's teams are swapped relative to the canonical order,
+ * the top/left scores are swapped so the board's scoring functions
+ * receive the right values.
+ */
+function gameStateForBoard(board: Board, state?: GameState): GameState {
+  const s = state ?? gameState;
+  if (isBoardSwapped(board)) {
+    return { quarter: s.quarter, score: { top: s.score.left, left: s.score.top } };
+  }
+  return s;
+}
+
+/**
+ * Same as gameStateForBoard but for a raw Score (used for past quarter winners).
+ */
+function scoreForBoard(board: Board, score: Score): Score {
+  if (isBoardSwapped(board)) {
+    return { top: score.left, left: score.top };
+  }
+  return score;
 }
 
 // ── Digit Summary ──────────────────────────────────────────────────────
@@ -984,7 +1027,7 @@ function renderMineEditor(board: Board): HTMLElement {
 // ── My Squares List ───────────────────────────────────────────────────
 
 function renderMySquaresList(board: Board): HTMLElement {
-  const statuses = checkAllMySquares(board, gameState);
+  const statuses = checkAllMySquares(board, gameStateForBoard(board));
   const list = el('ul', 'square-list');
 
   board.mySquares!.forEach((sq, i) => {
@@ -1025,7 +1068,7 @@ function renderFullBoardGrid(board: Board): HTMLElement {
   const fb = board.fullBoard!;
   const qi = quarterIndex(board, gameState.quarter);
   const qn = fb.quarters[qi];
-  const cellStatuses = getFullBoardCellStatuses(board, gameState);
+  const cellStatuses = getFullBoardCellStatuses(board, gameStateForBoard(board));
   const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
 
   const wrapper = el('div', 'grid-table-wrapper');
@@ -1112,7 +1155,7 @@ function renderFullBoardSummary(board: Board): HTMLElement {
   const fb = board.fullBoard!;
   const qi = quarterIndex(board, gameState.quarter);
   const qn = fb.quarters[qi];
-  const cellStatuses = getFullBoardCellStatuses(board, gameState);
+  const cellStatuses = getFullBoardCellStatuses(board, gameStateForBoard(board));
   const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
 
   const summary = el('div', 'status-summary');
