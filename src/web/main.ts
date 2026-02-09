@@ -833,6 +833,12 @@ function renderDigitSummary(): HTMLElement | null {
 
     const item = el('div', boardClasses.join(' '));
     item.appendChild(el('div', 'digit-summary-name', [board.config.name]));
+    const detailParts = [
+      `${board.config.cols}x${board.config.rows}`,
+      board.config.reroll ? 'reroll' : '',
+      board.config.buyIn ? `$${board.config.buyIn}` : '',
+    ].filter(Boolean);
+    item.appendChild(el('div', 'digit-summary-detail', [detailParts.join(' · ')]));
 
     if (hasWinner) {
       const payout = board.config.payouts?.[gameState.quarter];

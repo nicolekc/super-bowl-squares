@@ -391,6 +391,12 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--text);
+  margin-bottom: 0;
+}
+
+.digit-summary-detail {
+  font-size: 0.6875rem;
+  color: var(--muted);
   margin-bottom: 0.25rem;
 }
 

@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 
-export default defineConfig({
-  base: '/super-bowl-squares/',
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/super-bowl-squares/' : '/',
   build: {
     outDir: 'docs',
   },
-});
+}));
