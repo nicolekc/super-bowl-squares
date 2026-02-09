@@ -27,6 +27,7 @@ STEP 3: Output the board in this exact format:
 
 <Board Name> $<BuyIn> <Cols>x<Rows> full
 <TopTeam> (top) vs <LeftTeam> (left)
+Payouts <Q1> <Q2> <Q3> <Q4>    ← optional, if visible
 Top <TopTeam> <numbers>
 Left <LeftTeam> <numbers>
 <grid row 1>
@@ -69,6 +70,12 @@ GRID ROWS:
   Use exactly the name/initials shown in each cell.
   Every row must have exactly <cols> names.
 
+PAYOUTS LINE (optional):
+  Payouts <Q1> <Q2> <Q3> <Q4>
+  If payout amounts per quarter are visible on the board, include them
+  as 4 space-separated numbers. e.g., "Payouts 50 100 50 200"
+  Place this line immediately after the teams line, before the number lines.
+
 MINE LINE (optional):
   Mine <name1>, <name2>, ...
   Only include if I tell you which squares are mine.
@@ -77,6 +84,7 @@ EXAMPLE — 5x5 board:
 
 Family Pool $10 5x5 full
 Seahawks (top) vs Patriots (left)
+Payouts 25 50 25 100
 Top Seahawks 03 19 28 46 57
 Left Patriots 65 12 39 47 80
 Alice, Bob, Carol, Dan, Eve
