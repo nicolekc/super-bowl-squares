@@ -709,18 +709,40 @@ function renderDigitSummary(): HTMLElement | null {
   const topLast = lastDigit(gameState.score.top);
   const leftLast = lastDigit(gameState.score.left);
 
+  // Canonical team order from the scoring header (first board)
+  const canonTopTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
+  const canonLeftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
+  const canonTopShort = shortTeamName(canonTopTeam);
+  const canonLeftShort = shortTeamName(canonLeftTeam);
+
   for (const board of boards) {
     const qi = quarterIndex(board, gameState.quarter);
-    const topShort = shortTeamName(board.config.topTeam);
-    const leftShort = shortTeamName(board.config.leftTeam);
 
-    // Collect raw pairs
-    const rawPairs: { topDigits: number[]; leftDigits: number[] }[] = [];
+    // Detect if this board's teams are swapped relative to the canonical order.
+    // "scoreTop" corresponds to canonTopTeam. If this board's topTeam matches
+    // canonLeftTeam (or its left matches canonTop), the axes are flipped.
+    const boardTopAbbr = shortTeamName(board.config.topTeam);
+    const boardLeftAbbr = shortTeamName(board.config.leftTeam);
+    const isSwapped = boardTopAbbr === canonLeftShort && boardLeftAbbr === canonTopShort;
+
+    // When swapped: board's "top" axis = canonical "left" score,
+    //               board's "left" axis = canonical "top" score.
+    // For display we always show canonical order (canonTop first, canonLeft second).
+    // "firstDigits" = digits along the canonical-top axis
+    // "secondDigits" = digits along the canonical-left axis
+    const scoreFirst = isSwapped ? leftLast : topLast;   // last digit for the first (canonical-top) team
+    const scoreSecond = isSwapped ? topLast : leftLast;   // last digit for the second (canonical-left) team
+
+    // Collect raw pairs in canonical order: { firstDigits, secondDigits }
+    const rawPairs: { firstDigits: number[]; secondDigits: number[] }[] = [];
 
     if (board.mySquares && board.mySquares.length > 0) {
       for (const sq of board.mySquares) {
         const d = sq.quarters[qi];
-        rawPairs.push({ topDigits: d.topDigits, leftDigits: d.leftDigits });
+        rawPairs.push({
+          firstDigits: isSwapped ? d.leftDigits : d.topDigits,
+          secondDigits: isSwapped ? d.topDigits : d.leftDigits,
+        });
       }
     } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
       const fb = board.fullBoard;
@@ -730,7 +752,10 @@ function renderDigitSummary(): HTMLElement | null {
         for (let c = 0; c < board.config.cols; c++) {
           const owner = fb.grid[r]?.[c] ?? '';
           if (mineSet.has(owner.toLowerCase())) {
-            rawPairs.push({ topDigits: qn.topNumbers[c], leftDigits: qn.leftNumbers[r] });
+            rawPairs.push({
+              firstDigits: isSwapped ? qn.leftNumbers[r] : qn.topNumbers[c],
+              secondDigits: isSwapped ? qn.topNumbers[c] : qn.leftNumbers[r],
+            });
           }
         }
       }
@@ -738,26 +763,26 @@ function renderDigitSummary(): HTMLElement | null {
 
     if (rawPairs.length === 0) continue;
 
-    // Group by top digits, merge left digits
+    // Group by first (canonical-top) digits, merge second (canonical-left) digits
     const mergedMap = new Map<string, MergedRow>();
     for (const p of rawPairs) {
-      const topKey = formatDigits(p.topDigits);
+      const topKey = formatDigits(p.firstDigits);
       let row = mergedMap.get(topKey);
       if (!row) {
-        row = { topKey, topDigits: p.topDigits, leftGroups: [] };
+        row = { topKey, topDigits: p.firstDigits, leftGroups: [] };
         mergedMap.set(topKey, row);
       }
-      const leftKey = formatDigits(p.leftDigits);
+      const leftKey = formatDigits(p.secondDigits);
       if (!row.leftGroups.some(lg => formatDigits(lg) === leftKey)) {
-        row.leftGroups.push(p.leftDigits);
+        row.leftGroups.push(p.secondDigits);
       }
     }
     const merged = [...mergedMap.values()];
 
     // Check if any combination is winning
     const hasWinner = merged.some(row =>
-      row.topDigits.includes(topLast) &&
-      row.leftGroups.some(lg => lg.includes(leftLast)),
+      row.topDigits.includes(scoreFirst) &&
+      row.leftGroups.some(lg => lg.includes(scoreSecond)),
     );
 
     const boardClasses = ['digit-summary-board'];
@@ -772,21 +797,21 @@ function renderDigitSummary(): HTMLElement | null {
       item.appendChild(el('div', 'digit-summary-status winner', [winText]));
     }
 
-    // Render merged rows
+    // Render merged rows — always in canonical team order
     const pairsContainer = el('div', 'digit-summary-pairs');
     for (const row of merged) {
-      const isHit = row.topDigits.includes(topLast) &&
-        row.leftGroups.some(lg => lg.includes(leftLast));
+      const isHit = row.topDigits.includes(scoreFirst) &&
+        row.leftGroups.some(lg => lg.includes(scoreSecond));
       const pairEl = el('div', `digit-summary-pair${isHit ? ' pair-hit' : ''}`);
 
-      // Top side
-      pairEl.appendChild(el('span', 'ds-team', [topShort]));
+      // First team (canonical top)
+      pairEl.appendChild(el('span', 'ds-team', [canonTopShort]));
       pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.topDigits)]));
 
       pairEl.appendChild(el('span', 'ds-sep', ['/']));
 
-      // Left side: single digit or [list]
-      pairEl.appendChild(el('span', 'ds-team', [leftShort]));
+      // Second team (canonical left): single digit or [list]
+      pairEl.appendChild(el('span', 'ds-team', [canonLeftShort]));
       if (row.leftGroups.length === 1) {
         pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.leftGroups[0])]));
       } else {
