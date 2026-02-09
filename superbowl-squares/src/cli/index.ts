@@ -332,10 +332,52 @@ function repeat(ch: string, n: number): string {
 
 // ── Display all boards ─────────────────────────────────
 
+function displayDigitSummary(boards: Board[], state: GameState) {
+  let any = false;
+  for (const board of boards) {
+    const qi = quarterIndex(board, state.quarter);
+    const topDigits = new Set<number>();
+    const leftDigits = new Set<number>();
+
+    if (board.mySquares && board.mySquares.length > 0) {
+      for (const sq of board.mySquares) {
+        const d = sq.quarters[qi];
+        for (const n of d.topDigits) topDigits.add(n);
+        for (const n of d.leftDigits) leftDigits.add(n);
+      }
+    } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
+      const fb = board.fullBoard;
+      const qn = fb.quarters[qi];
+      const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
+      for (let r = 0; r < board.config.rows; r++) {
+        for (let col = 0; col < board.config.cols; col++) {
+          const owner = fb.grid[r]?.[col] ?? '';
+          if (mineSet.has(owner.toLowerCase())) {
+            for (const n of qn.topNumbers[col]) topDigits.add(n);
+            for (const n of qn.leftNumbers[r]) leftDigits.add(n);
+          }
+        }
+      }
+    }
+
+    if (topDigits.size === 0 && leftDigits.size === 0) continue;
+    if (!any) {
+      console.log(c.dim('  My Digits This Quarter:'));
+      any = true;
+    }
+    const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
+    console.log(c.bold(`  ${board.config.name}`));
+    console.log(`    ${board.config.topTeam}: ${c.cyan('[' + sorted(topDigits).join(', ') + ']')}`);
+    console.log(`    ${board.config.leftTeam}: ${c.cyan('[' + sorted(leftDigits).join(', ') + ']')}`);
+  }
+}
+
 function displayAllBoards(boards: Board[], state: GameState) {
   const ql = quarterLabel(state.quarter);
   console.log('');
   console.log(c.bold(c.cyan(`  ${ql} | ${boards[0]?.config.topTeam ?? 'Team1'} ${state.score.top} - ${boards[0]?.config.leftTeam ?? 'Team2'} ${state.score.left}`)));
+
+  displayDigitSummary(boards, state);
 
   for (const board of boards) {
     if (board.fullBoard) {
@@ -358,6 +400,9 @@ async function scoringLoop(boards: Board[]) {
   console.log(c.dim('Commands:'));
   console.log(c.dim('  Two numbers (e.g., "14 7") to update score'));
   console.log(c.dim('  "q" or "quarter" to advance quarter'));
+  console.log(c.dim('  "add" to add more boards'));
+  console.log(c.dim('  "mine" to set which squares you\'re tracking on a full board'));
+  console.log(c.dim('  "save" to print board data for saving'));
   console.log(c.dim('  "exit" or "quit" to exit'));
 
   displayAllBoards(boards, state);
@@ -383,6 +428,67 @@ async function scoringLoop(boards: Board[]) {
       continue;
     }
 
+    if (input === 'add') {
+      console.log('Paste board data (blank line when done), or enter manually:\n');
+      const text = await readMultiLine();
+      if (text.length > 0) {
+        try {
+          const newBoards = parseBoards(text);
+          boards.push(...newBoards);
+          console.log(c.green(`Added ${newBoards.length} board(s) (${boards.length} total)`));
+        } catch (e: any) {
+          console.log(c.red(`Parse error: ${e.message}`));
+        }
+      } else {
+        const newBoards = await manualSetup();
+        boards.push(...newBoards);
+        console.log(c.green(`Added ${newBoards.length} board(s) (${boards.length} total)`));
+      }
+      displayAllBoards(boards, state);
+      continue;
+    }
+
+    if (input === 'mine') {
+      const fullBoards = boards
+        .map((b, i) => ({ b, i }))
+        .filter(({ b }) => b.fullBoard);
+      if (fullBoards.length === 0) {
+        console.log(c.yellow('No full boards loaded. "mine" only works with full boards.'));
+        continue;
+      }
+      let target: { b: Board; i: number };
+      if (fullBoards.length === 1) {
+        target = fullBoards[0];
+      } else {
+        console.log('Which board?');
+        fullBoards.forEach(({ b, i }) => console.log(`  ${i + 1}. ${b.config.name}`));
+        const choice = await ask('Board #: ');
+        const idx = parseInt(choice) - 1;
+        const found = fullBoards.find(({ i }) => i === idx);
+        if (!found) { console.log(c.red('Invalid choice.')); continue; }
+        target = found;
+      }
+      console.log(`Current: ${target.b.fullBoard!.mySquareNames.join(', ') || '(none)'}`);
+      const names = await ask('Your names (comma-separated): ');
+      target.b.fullBoard!.mySquareNames = names
+        .split(',')
+        .map(n => n.trim())
+        .filter(n => n.length > 0);
+      console.log(c.green(`Tracking: ${target.b.fullBoard!.mySquareNames.join(', ')}`));
+      displayAllBoards(boards, state);
+      continue;
+    }
+
+    if (input === 'save') {
+      console.log('\n' + c.dim('\u2500'.repeat(50)));
+      console.log(c.bold(c.cyan('Board data:')));
+      console.log('');
+      console.log(serializeBoards(boards));
+      console.log('');
+      console.log(c.dim('\u2500'.repeat(50)));
+      continue;
+    }
+
     const scoreMatch = input.match(/^(\d+)\s+(\d+)$/);
     if (scoreMatch) {
       state.score.top = parseInt(scoreMatch[1]);
@@ -391,7 +497,7 @@ async function scoringLoop(boards: Board[]) {
       continue;
     }
 
-    console.log(c.red('Unknown command. Enter two numbers, "q", or "exit".'));
+    console.log(c.red('Unknown command. Enter two numbers, "q", "add", "save", or "exit".'));
   }
 }
 

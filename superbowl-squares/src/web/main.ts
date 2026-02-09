@@ -2,23 +2,27 @@
 // Pure DOM manipulation, no frameworks. Imports from the core library.
 
 import {
-  Board, BoardConfig, GameState, AxisSize, SquareStatus, NearMiss,
+  Board, BoardConfig, GameState, AxisSize, SquareStatus, NearMiss, Score,
   MySquare, FullBoardData, QuarterDigits,
   parseBoards, serializeBoards,
   checkAllMySquares, getFullBoardCellStatuses, quarterIndex,
-  formatDigits,
+  formatDigits, lastDigit, findPosition,
 } from '../core/index.js';
 
 // ── Constants ─────────────────────────────────────────────────────────
 
 const QUARTER_LABELS = ['Q1', 'Q2', 'Q3', 'Final'];
 const LS_KEY = 'sb-squares-data';
+const LS_STATE_KEY = 'sb-squares-state';
 
 // ── App State ─────────────────────────────────────────────────────────
 
 let boards: Board[] = [];
 let gameState: GameState = { quarter: 0, score: { top: 0, left: 0 } };
 let activeTab: 'setup' | 'scoring' = 'setup';
+
+/** Scores locked in at the end of each quarter (index 0-3). null = not yet played. */
+let quarterScores: (Score | null)[] = [null, null, null, null];
 
 // ── DOM Helpers ───────────────────────────────────────────────────────
 
@@ -91,13 +95,44 @@ function showToast(message: string): void {
 function saveToLocalStorage(): void {
   if (boards.length === 0) {
     localStorage.removeItem(LS_KEY);
+    localStorage.removeItem(LS_STATE_KEY);
     return;
   }
   localStorage.setItem(LS_KEY, serializeBoards(boards));
+  saveGameState();
+}
+
+function saveGameState(): void {
+  localStorage.setItem(LS_STATE_KEY, JSON.stringify({
+    quarter: gameState.quarter,
+    score: gameState.score,
+    quarterScores,
+  }));
 }
 
 function loadFromLocalStorage(): string | null {
   return localStorage.getItem(LS_KEY);
+}
+
+function loadGameState(): void {
+  const raw = localStorage.getItem(LS_STATE_KEY);
+  if (!raw) return;
+  try {
+    const s = JSON.parse(raw);
+    if (typeof s.quarter === 'number') gameState.quarter = s.quarter;
+    if (s.score && typeof s.score.top === 'number') gameState.score.top = s.score.top;
+    if (s.score && typeof s.score.left === 'number') gameState.score.left = s.score.left;
+    if (Array.isArray(s.quarterScores)) {
+      for (let i = 0; i < 4; i++) {
+        const qs = s.quarterScores[i];
+        if (qs && typeof qs.top === 'number' && typeof qs.left === 'number') {
+          quarterScores[i] = { top: qs.top, left: qs.left };
+        }
+      }
+    }
+  } catch {
+    // ignore corrupt state
+  }
 }
 
 // ── Render Engine ─────────────────────────────────────────────────────
@@ -214,7 +249,22 @@ function renderPasteSection(): HTMLElement {
   section.appendChild(ta);
 
   const row = el('div', 'form-row mt-1');
-  row.appendChild(btn('Load Boards', 'btn btn-primary', () => {
+  row.appendChild(btn('Add Boards', 'btn btn-primary', () => {
+    const val = ta.value.trim();
+    if (!val) { showToast('Paste board data first'); return; }
+    try {
+      const newBoards = parseBoards(val);
+      boards.push(...newBoards);
+      saveToLocalStorage();
+      ta.value = '';
+      if (boards.length === newBoards.length) activeTab = 'scoring';
+      render();
+      showToast(`Added ${newBoards.length} board(s) (${boards.length} total)`);
+    } catch (e: any) {
+      showToast('Parse error: ' + e.message);
+    }
+  }));
+  row.appendChild(btn('Replace All', 'btn btn-secondary', () => {
     const val = ta.value.trim();
     if (!val) { showToast('Paste board data first'); return; }
     try {
@@ -222,7 +272,7 @@ function renderPasteSection(): HTMLElement {
       saveToLocalStorage();
       activeTab = 'scoring';
       render();
-      showToast(`Loaded ${boards.length} board(s)`);
+      showToast(`Replaced with ${boards.length} board(s)`);
     } catch (e: any) {
       showToast('Parse error: ' + e.message);
     }
@@ -513,6 +563,12 @@ function renderScoringPanel(): HTMLElement {
   const panel = el('div', 'scoring-panel');
   panel.appendChild(renderScoringHeader());
 
+  const pastWinners = renderPastQuarterWinners();
+  if (pastWinners) panel.appendChild(pastWinners);
+
+  const digitSummary = renderDigitSummary();
+  if (digitSummary) panel.appendChild(digitSummary);
+
   for (const board of boards) {
     panel.appendChild(renderBoardCard(board));
   }
@@ -520,10 +576,338 @@ function renderScoringPanel(): HTMLElement {
   return panel;
 }
 
+// ── Past Quarter Winners ──────────────────────────────────────────────
+
+function renderPastQuarterWinners(): HTMLElement | null {
+  // Only show if at least one past quarter has been scored
+  const pastQuarters = quarterScores.slice(0, gameState.quarter).filter(Boolean);
+  if (pastQuarters.length === 0) return null;
+
+  const section = el('div', 'past-winners');
+  section.appendChild(el('div', 'past-winners-title', ['Quarter Results']));
+
+  for (let q = 0; q < gameState.quarter; q++) {
+    const qs = quarterScores[q];
+    if (!qs) continue;
+
+    const topTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
+    const leftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
+    const topShort = shortTeamName(topTeam);
+    const leftShort = shortTeamName(leftTeam);
+    const topD = lastDigit(qs.top);
+    const leftD = lastDigit(qs.left);
+
+    const qRow = el('div', 'past-winners-quarter');
+    qRow.appendChild(el('span', 'pw-label', [QUARTER_LABELS[q]]));
+    qRow.appendChild(el('span', 'pw-score', [
+      `${topShort} ${qs.top} - ${leftShort} ${qs.left}`,
+    ]));
+
+    // Find winners across all boards
+    const winnerNames: string[] = [];
+    for (const board of boards) {
+      const qi = quarterIndex(board, q);
+      const mineSet = board.fullBoard
+        ? new Set(board.fullBoard.mySquareNames.map(n => n.toLowerCase()))
+        : new Set<string>();
+
+      // Map canonical scores to this board's axes
+      const boardScore = scoreForBoard(board, qs);
+      const boardTopD = lastDigit(boardScore.top);
+      const boardLeftD = lastDigit(boardScore.left);
+
+      if (board.fullBoard) {
+        const qn = board.fullBoard.quarters[qi];
+        const winCol = findPosition(qn.topNumbers, boardTopD);
+        const winRow = findPosition(qn.leftNumbers, boardLeftD);
+        if (winCol >= 0 && winRow >= 0) {
+          const owner = board.fullBoard.grid[winRow]?.[winCol] ?? '???';
+          const isMine = mineSet.has(owner.toLowerCase());
+          const payout = board.config.payouts?.[q];
+          let entry = owner;
+          if (payout != null) entry += ` ($${payout})`;
+          if (isMine) entry = '\u2605 ' + entry;
+          winnerNames.push(entry);
+        }
+      } else if (board.mySquares) {
+        const digits = board.mySquares.map(sq => sq.quarters[qi]);
+        for (const d of digits) {
+          if (d.topDigits.includes(boardTopD) && d.leftDigits.includes(boardLeftD)) {
+            const payout = board.config.payouts?.[q];
+            let entry = `${board.config.name}`;
+            if (payout != null) entry += ` ($${payout})`;
+            entry = '\u2605 ' + entry;
+            winnerNames.push(entry);
+            break;
+          }
+        }
+      }
+    }
+
+    if (winnerNames.length > 0) {
+      for (const name of winnerNames) {
+        const isMine = name.startsWith('\u2605');
+        qRow.appendChild(el('span', isMine ? 'pw-winner pw-mine' : 'pw-winner', [name]));
+      }
+    }
+
+    section.appendChild(qRow);
+  }
+
+  return section;
+}
+
+// ── NFL Team Abbreviations ────────────────────────────────────────────
+
+const NFL_ABBREVS: Record<string, string> = {
+  'arizona cardinals': 'ARI', 'cardinals': 'ARI',
+  'atlanta falcons': 'ATL', 'falcons': 'ATL',
+  'baltimore ravens': 'BAL', 'ravens': 'BAL',
+  'buffalo bills': 'BUF', 'bills': 'BUF',
+  'carolina panthers': 'CAR', 'panthers': 'CAR',
+  'chicago bears': 'CHI', 'bears': 'CHI',
+  'cincinnati bengals': 'CIN', 'bengals': 'CIN',
+  'cleveland browns': 'CLE', 'browns': 'CLE',
+  'dallas cowboys': 'DAL', 'cowboys': 'DAL',
+  'denver broncos': 'DEN', 'broncos': 'DEN',
+  'detroit lions': 'DET', 'lions': 'DET',
+  'green bay packers': 'GB', 'packers': 'GB',
+  'houston texans': 'HOU', 'texans': 'HOU',
+  'indianapolis colts': 'IND', 'colts': 'IND',
+  'jacksonville jaguars': 'JAX', 'jaguars': 'JAX',
+  'kansas city chiefs': 'KC', 'chiefs': 'KC',
+  'las vegas raiders': 'LV', 'raiders': 'LV',
+  'los angeles chargers': 'LAC', 'chargers': 'LAC',
+  'los angeles rams': 'LAR', 'rams': 'LAR',
+  'miami dolphins': 'MIA', 'dolphins': 'MIA',
+  'minnesota vikings': 'MIN', 'vikings': 'MIN',
+  'new england patriots': 'NE', 'patriots': 'NE',
+  'new orleans saints': 'NO', 'saints': 'NO',
+  'new york giants': 'NYG', 'giants': 'NYG',
+  'new york jets': 'NYJ', 'jets': 'NYJ',
+  'philadelphia eagles': 'PHI', 'eagles': 'PHI',
+  'pittsburgh steelers': 'PIT', 'steelers': 'PIT',
+  'san francisco 49ers': 'SF', '49ers': 'SF',
+  'seattle seahawks': 'SEA', 'seahawks': 'SEA',
+  'tampa bay buccaneers': 'TB', 'buccaneers': 'TB', 'bucs': 'TB',
+  'tennessee titans': 'TEN', 'titans': 'TEN',
+  'washington commanders': 'WAS', 'commanders': 'WAS',
+};
+
+function shortTeamName(fullName: string): string {
+  const abbrev = NFL_ABBREVS[fullName.toLowerCase()];
+  if (abbrev) return abbrev;
+  return fullName;
+}
+
+/**
+ * Returns true if this board's teams are swapped relative to the
+ * canonical order (boards[0]). When swapped, the board's "top" axis
+ * corresponds to the canonical "left" team and vice versa.
+ */
+function isBoardSwapped(board: Board): boolean {
+  if (boards.length === 0) return false;
+  const canonTopAbbr = shortTeamName(boards[0].config.topTeam);
+  const canonLeftAbbr = shortTeamName(boards[0].config.leftTeam);
+  const boardTopAbbr = shortTeamName(board.config.topTeam);
+  const boardLeftAbbr = shortTeamName(board.config.leftTeam);
+  return boardTopAbbr === canonLeftAbbr && boardLeftAbbr === canonTopAbbr;
+}
+
+/**
+ * Returns a GameState with scores mapped correctly for the given board.
+ * If the board's teams are swapped relative to the canonical order,
+ * the top/left scores are swapped so the board's scoring functions
+ * receive the right values.
+ */
+function gameStateForBoard(board: Board, state?: GameState): GameState {
+  const s = state ?? gameState;
+  if (isBoardSwapped(board)) {
+    return { quarter: s.quarter, score: { top: s.score.left, left: s.score.top } };
+  }
+  return s;
+}
+
+/**
+ * Same as gameStateForBoard but for a raw Score (used for past quarter winners).
+ */
+function scoreForBoard(board: Board, score: Score): Score {
+  if (isBoardSwapped(board)) {
+    return { top: score.left, left: score.top };
+  }
+  return score;
+}
+
+// ── Digit Summary ──────────────────────────────────────────────────────
+
+/** A merged row: one top-digit group with all its associated left-digit groups */
+interface MergedRow {
+  topKey: string;
+  topDigits: number[];
+  leftGroups: number[][];  // each entry is a unique set of left digits
+}
+
+function renderDigitSummary(): HTMLElement | null {
+  const items: HTMLElement[] = [];
+  const topLast = lastDigit(gameState.score.top);
+  const leftLast = lastDigit(gameState.score.left);
+
+  // Canonical team order from the scoring header (first board)
+  const canonTopTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
+  const canonLeftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
+  const canonTopShort = shortTeamName(canonTopTeam);
+  const canonLeftShort = shortTeamName(canonLeftTeam);
+
+  for (const board of boards) {
+    const qi = quarterIndex(board, gameState.quarter);
+
+    // Detect if this board's teams are swapped relative to the canonical order.
+    // "scoreTop" corresponds to canonTopTeam. If this board's topTeam matches
+    // canonLeftTeam (or its left matches canonTop), the axes are flipped.
+    const boardTopAbbr = shortTeamName(board.config.topTeam);
+    const boardLeftAbbr = shortTeamName(board.config.leftTeam);
+    const isSwapped = boardTopAbbr === canonLeftShort && boardLeftAbbr === canonTopShort;
+
+    // When swapped: board's "top" axis = canonical "left" score,
+    //               board's "left" axis = canonical "top" score.
+    // For display we always show canonical order (canonTop first, canonLeft second).
+    // "firstDigits" = digits along the canonical-top axis
+    // "secondDigits" = digits along the canonical-left axis
+    const scoreFirst = isSwapped ? leftLast : topLast;   // last digit for the first (canonical-top) team
+    const scoreSecond = isSwapped ? topLast : leftLast;   // last digit for the second (canonical-left) team
+
+    // Collect raw pairs in canonical order: { firstDigits, secondDigits }
+    const rawPairs: { firstDigits: number[]; secondDigits: number[] }[] = [];
+
+    if (board.mySquares && board.mySquares.length > 0) {
+      for (const sq of board.mySquares) {
+        const d = sq.quarters[qi];
+        rawPairs.push({
+          firstDigits: isSwapped ? d.leftDigits : d.topDigits,
+          secondDigits: isSwapped ? d.topDigits : d.leftDigits,
+        });
+      }
+    } else if (board.fullBoard && board.fullBoard.mySquareNames.length > 0) {
+      const fb = board.fullBoard;
+      const qn = fb.quarters[qi];
+      const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
+      for (let r = 0; r < board.config.rows; r++) {
+        for (let c = 0; c < board.config.cols; c++) {
+          const owner = fb.grid[r]?.[c] ?? '';
+          if (mineSet.has(owner.toLowerCase())) {
+            rawPairs.push({
+              firstDigits: isSwapped ? qn.leftNumbers[r] : qn.topNumbers[c],
+              secondDigits: isSwapped ? qn.topNumbers[c] : qn.leftNumbers[r],
+            });
+          }
+        }
+      }
+    }
+
+    if (rawPairs.length === 0) continue;
+
+    // Group by first (canonical-top) digits, merge second (canonical-left) digits
+    const mergedMap = new Map<string, MergedRow>();
+    for (const p of rawPairs) {
+      const topKey = formatDigits(p.firstDigits);
+      let row = mergedMap.get(topKey);
+      if (!row) {
+        row = { topKey, topDigits: p.firstDigits, leftGroups: [] };
+        mergedMap.set(topKey, row);
+      }
+      const leftKey = formatDigits(p.secondDigits);
+      if (!row.leftGroups.some(lg => formatDigits(lg) === leftKey)) {
+        row.leftGroups.push(p.secondDigits);
+      }
+    }
+    const merged = [...mergedMap.values()];
+
+    // Check if any combination is winning
+    const hasWinner = merged.some(row =>
+      row.topDigits.includes(scoreFirst) &&
+      row.leftGroups.some(lg => lg.includes(scoreSecond)),
+    );
+
+    const boardClasses = ['digit-summary-board'];
+    if (hasWinner) boardClasses.push('has-winner');
+
+    const item = el('div', boardClasses.join(' '));
+    item.appendChild(el('div', 'digit-summary-name', [board.config.name]));
+    const detailParts = [
+      `${board.config.cols}x${board.config.rows}`,
+      board.config.reroll ? 'reroll' : '',
+      board.config.buyIn ? `$${board.config.buyIn}` : '',
+    ].filter(Boolean);
+    item.appendChild(el('div', 'digit-summary-detail', [detailParts.join(' · ')]));
+
+    if (hasWinner) {
+      const payout = board.config.payouts?.[gameState.quarter];
+      const winText = payout != null ? `IN THE MONEY — $${payout}` : 'IN THE MONEY';
+      item.appendChild(el('div', 'digit-summary-status winner', [winText]));
+    }
+
+    // Render merged rows — always in canonical team order
+    const pairsContainer = el('div', 'digit-summary-pairs');
+    for (const row of merged) {
+      const isHit = row.topDigits.includes(scoreFirst) &&
+        row.leftGroups.some(lg => lg.includes(scoreSecond));
+      const pairEl = el('div', `digit-summary-pair${isHit ? ' pair-hit' : ''}`);
+
+      // First team (canonical top)
+      pairEl.appendChild(el('span', 'ds-team', [canonTopShort]));
+      pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.topDigits)]));
+
+      pairEl.appendChild(el('span', 'ds-sep', ['/']));
+
+      // Second team (canonical left): single digit or [list]
+      pairEl.appendChild(el('span', 'ds-team', [canonLeftShort]));
+      if (row.leftGroups.length === 1) {
+        pairEl.appendChild(el('span', 'ds-digit', [formatDigits(row.leftGroups[0])]));
+      } else {
+        const sorted = row.leftGroups
+          .map(lg => formatDigits(lg))
+          .sort((a, b) => parseInt(a) - parseInt(b));
+        pairEl.appendChild(el('span', 'ds-digit', ['[' + sorted.join(', ') + ']']));
+      }
+
+      pairsContainer.appendChild(pairEl);
+    }
+    item.appendChild(pairsContainer);
+
+    items.push(item);
+  }
+
+  if (items.length === 0) return null;
+
+  const section = el('div', 'digit-summary');
+  section.appendChild(el('div', 'digit-summary-title', ['My Squares This Quarter']));
+  const grid = el('div', 'digit-summary-grid');
+  for (const item of items) grid.appendChild(item);
+  section.appendChild(grid);
+  return section;
+}
+
 // ── Scoring Header ────────────────────────────────────────────────────
 
 function renderScoringHeader(): HTMLElement {
   const header = el('div', 'scoring-header');
+
+  // Determine team labels (use first board's teams or fallback)
+  const topTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
+  const leftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
+
+  // Score inputs (created first so quarter buttons can read them)
+  const topInput = input('number', { className: 'score-input', value: String(gameState.score.top) });
+  topInput.min = '0';
+  const leftInput = input('number', { className: 'score-input', value: String(gameState.score.left) });
+  leftInput.min = '0';
+
+  /** Sync score input values into gameState */
+  function syncScore(): void {
+    gameState.score.top = parseInt(topInput.value) || 0;
+    gameState.score.left = parseInt(leftInput.value) || 0;
+    saveGameState();
+  }
 
   // Quarter bar
   const qBar = el('div', 'quarter-bar');
@@ -532,13 +916,19 @@ function renderScoringHeader(): HTMLElement {
 
   if (gameState.quarter > 0) {
     qActions.appendChild(btn('Prev Quarter', 'btn btn-secondary btn-sm', () => {
+      syncScore();
       gameState.quarter--;
+      saveGameState();
       render();
     }));
   }
   if (gameState.quarter < 3) {
     qActions.appendChild(btn('Next Quarter', 'btn btn-secondary btn-sm', () => {
+      syncScore();
+      // Snapshot this quarter's final score
+      quarterScores[gameState.quarter] = { ...gameState.score };
       gameState.quarter++;
+      saveGameState();
       render();
     }));
   }
@@ -547,17 +937,8 @@ function renderScoringHeader(): HTMLElement {
   qBar.appendChild(qActions);
   header.appendChild(qBar);
 
-  // Determine team labels (use first board's teams or fallback)
-  const topTeam = boards.length > 0 ? boards[0].config.topTeam : 'Top';
-  const leftTeam = boards.length > 0 ? boards[0].config.leftTeam : 'Left';
-
-  // Score inputs
+  // Score row
   const scoreRow = el('div', 'score-row');
-
-  const topInput = input('number', { className: 'score-input', value: String(gameState.score.top) });
-  topInput.min = '0';
-  const leftInput = input('number', { className: 'score-input', value: String(gameState.score.left) });
-  leftInput.min = '0';
 
   const topGroup = el('div', 'score-group', [
     el('label', '', [topTeam]),
@@ -572,16 +953,14 @@ function renderScoringHeader(): HTMLElement {
   ]);
 
   const updateBtn = btn('Update', 'btn btn-primary btn-sm', () => {
-    gameState.score.top = parseInt(topInput.value) || 0;
-    gameState.score.left = parseInt(leftInput.value) || 0;
+    syncScore();
     render();
   });
 
   // Also update on enter key
   const onEnter = (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
-      gameState.score.top = parseInt(topInput.value) || 0;
-      gameState.score.left = parseInt(leftInput.value) || 0;
+      syncScore();
       render();
     }
   };
@@ -616,6 +995,7 @@ function renderBoardCard(board: Board): HTMLElement {
 
   if (board.fullBoard) {
     card.appendChild(renderFullBoardGrid(board));
+    card.appendChild(renderMineEditor(board));
     card.appendChild(renderFullBoardSummary(board));
   } else if (board.mySquares) {
     card.appendChild(renderMySquaresList(board));
@@ -624,10 +1004,36 @@ function renderBoardCard(board: Board): HTMLElement {
   return card;
 }
 
+// ── Mine Editor ──────────────────────────────────────────────────────
+
+function renderMineEditor(board: Board): HTMLElement {
+  const fb = board.fullBoard!;
+  const row = el('div', 'form-row mt-1 mine-editor');
+  row.appendChild(el('label', 'text-sm', ['Mine:']));
+  const mineInput = input('text', {
+    placeholder: 'Your names, comma-separated',
+    className: 'mine-input',
+    value: fb.mySquareNames.join(', '),
+  });
+  mineInput.style.flex = '1';
+  const updateBtn = btn('Set', 'btn btn-secondary btn-sm', () => {
+    fb.mySquareNames = mineInput.value
+      .split(',')
+      .map(n => n.trim())
+      .filter(n => n.length > 0);
+    saveToLocalStorage();
+    render();
+    showToast('Updated tracked squares');
+  });
+  row.appendChild(mineInput);
+  row.appendChild(updateBtn);
+  return row;
+}
+
 // ── My Squares List ───────────────────────────────────────────────────
 
 function renderMySquaresList(board: Board): HTMLElement {
-  const statuses = checkAllMySquares(board, gameState);
+  const statuses = checkAllMySquares(board, gameStateForBoard(board));
   const list = el('ul', 'square-list');
 
   board.mySquares!.forEach((sq, i) => {
@@ -668,17 +1074,30 @@ function renderFullBoardGrid(board: Board): HTMLElement {
   const fb = board.fullBoard!;
   const qi = quarterIndex(board, gameState.quarter);
   const qn = fb.quarters[qi];
-  const cellStatuses = getFullBoardCellStatuses(board, gameState);
+  const cellStatuses = getFullBoardCellStatuses(board, gameStateForBoard(board));
   const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
 
   const wrapper = el('div', 'grid-table-wrapper');
   const table = el('table', 'grid-table');
 
-  // Header row with top numbers
+  // Header row: team label row above numbers
   const thead = document.createElement('thead');
+  const teamRow = document.createElement('tr');
+  const teamCorner = document.createElement('th');
+  teamCorner.className = 'corner';
+  teamRow.appendChild(teamCorner);
+  const topTeamTh = document.createElement('th');
+  topTeamTh.className = 'team-label-top';
+  topTeamTh.colSpan = board.config.cols;
+  topTeamTh.textContent = `\u2190 ${board.config.topTeam} \u2192`;
+  teamRow.appendChild(topTeamTh);
+  thead.appendChild(teamRow);
+
+  // Header row with top numbers
   const headerRow = document.createElement('tr');
   const corner = document.createElement('th');
   corner.className = 'corner';
+  corner.innerHTML = `<span style="font-size:0.5rem">${board.config.leftTeam}</span>`;
   headerRow.appendChild(corner);
 
   for (let c = 0; c < board.config.cols; c++) {
@@ -707,13 +1126,25 @@ function renderFullBoardGrid(board: Board): HTMLElement {
 
       const key = `${r},${c}`;
       const cs = cellStatuses.get(key);
-      const classes: string[] = [];
+      const classes: string[] = ['cell-clickable'];
+      const isMine = mineSet.has(owner.toLowerCase());
 
       if (cs?.isWinner) classes.push('cell-winner');
       else if (cs && cs.nearMisses.length > 0) classes.push('cell-near');
-      if (mineSet.has(owner.toLowerCase())) classes.push('cell-mine');
+      if (isMine) classes.push('cell-mine');
 
-      if (classes.length > 0) td.className = classes.join(' ');
+      td.className = classes.join(' ');
+      td.addEventListener('click', () => {
+        if (!owner) return;
+        const lc = owner.toLowerCase();
+        if (mineSet.has(lc)) {
+          fb.mySquareNames = fb.mySquareNames.filter(n => n.toLowerCase() !== lc);
+        } else {
+          fb.mySquareNames.push(owner);
+        }
+        saveToLocalStorage();
+        render();
+      });
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
@@ -730,7 +1161,7 @@ function renderFullBoardSummary(board: Board): HTMLElement {
   const fb = board.fullBoard!;
   const qi = quarterIndex(board, gameState.quarter);
   const qn = fb.quarters[qi];
-  const cellStatuses = getFullBoardCellStatuses(board, gameState);
+  const cellStatuses = getFullBoardCellStatuses(board, gameStateForBoard(board));
   const mineSet = new Set(fb.mySquareNames.map(n => n.toLowerCase()));
 
   const summary = el('div', 'status-summary');
@@ -785,9 +1216,94 @@ function renderFullBoardSummary(board: Board): HTMLElement {
   return summary;
 }
 
+// ── Default Boards ────────────────────────────────────────────────────
+
+const DEFAULT_BOARDS = `PrintYourBrackets 10x10 full
+Seahawks (top) vs Patriots (left)
+Top Seahawks 3 0 7 4 2 9 1 5 8 6
+Left Patriots 8 2 7 0 4 3 6 1 9 5
+Jason D, Rick RBD, Bup, Judy Gibson, Andy, Hoss, JR, Wendy Dowland, Jaron Pagzant, Colton S.
+Angler, Dirty Doug, Ryder, Mitz, Deb B, Todd Cordova, Jason D, Chari, Lance, Cliff Heather
+Casey Shofield, Alec B, Jaron Pagzant, Ryo, Lukas Gadd, Todd Moser, Karen Wiet, Shannon, Cooper, Curt
+JR, Tom Dowland, RC, BW Wolf, Chari, Linda Greg, Eric Molly, Curt, Milia Jackson, Ryder
+Lance, Ryo Cousin, Mitz Bryant, Jason D, Briana B, Shayne Westberg, Tyson, Lyuba Gadd, Angler, Bup
+Logan Gadd, Chari, Curt, Tenley Thompson, Bob T, Dave B, JR, Lance, Tine Arlene, Curt
+Bup, Greg Diane, Cooper, Janean Dowland, Aaron Wiet, Jimmy Burke, Chari, Ryo, Andy, Mike Sonya
+Terri Savitsky, Lance, JR, Blackthorse, Christina, Curt, Rick Murphy, Jason, Todd Cordova, Shannon
+Curt, Jason D, Chari, Brooke Shofield, Bup, Jaron Pagzant, Jimmy Burke, Hoss, Ryo Captain, Eric B
+Nathan Dowland, Shannon, Tammy Westberg, Lance, RC, Dirty Doug, Isaac S, Curt, JR, Turbo
+---
+Super Bowl LX $25 5x10 full
+New England Patriots (top) vs Seattle Seahawks (left)
+Top New England Patriots 65 72 49 30 81
+Left Seattle Seahawks 4 2 8 7 3 9 5 1 0 6
+Smash, BroncosMom, Mitsman, Poppy, caron
+Wsnider, nicolekc, Daniel Monto, Habolos, Poppy
+Purple Peopl, The Blaz, SEAHAWKS!, King, Meredith
+Purple Peopl, Habolos, King, Beau's, Nik
+Wiet, SEAHAWKS!, Meredith, The Blaz, nicolekc
+Brad, Wiet, Stupit Picks, Steve H, Dipped-In-Sa
+Beau's, Tina, Wiet, Ron O., Tomeki
+Brad, Kim E, Nik, TenTen10, Brad
+Dylan, Mama Petie, Dipped-In-Sa, Smash, TenTen10
+Takeo, Nik, caron, Tasha, Beau's
+---
+Super Bowl LX $50 5x5 reroll full
+New England Patriots (top) vs Seattle Seahawks (left)
+Q1 Top 86 71 30 45 92, Left 16 97 04 52 83
+Q2 Top 45 90 32 76 18, Left 95 76 38 21 04
+Q3 Top 19 47 36 05 28, Left 12 80 74 93 65
+Q4 Top 47 93 05 82 16, Left 06 84 59 23 17
+Smash, King, Mitsman, Tomeki, Meredith
+Amber, Wiet, The Blaz, nicolekc, Beau's
+Wsnider, Purple Peopl, SEAHAWKS!, Stupit Picks, Steve H
+Tina, The Blaz, Beau's, Habolos, Mama Petie
+Takeo, Dylan, Nik, Brad, BroncosMom
+---
+Super Bowl LX $50 5x5 full
+New England Patriots (top) vs Seattle Seahawks (left)
+Top New England Patriots 02 17 36 85 49
+Left Seattle Seahawks 64 15 72 89 30
+Nik, Takeo, Purple Peopl, Wsnider, Beau's
+Eric, The Blaz, Tasha, Wiet, Dipped-In-Sa
+Mitsman, Tina, Stupit Picks, The Blaz, Habolos
+Ron O., Tomeki, King, Steve H, Mama Petie
+Smash, SEAHAWKS!, Beau's, Meredith, nicolekc
+---
+Super Bowl LX $10 10x10 full
+New England Patriots (top) vs Seattle Seahawks (left)
+Top New England Patriots 9 3 6 0 7 5 4 2 8 1
+Left Seattle Seahawks 4 5 8 3 7 6 0 9 2 1
+Smash, BroncosMom, BroncosMom, Beau's, caron, Eric, Meredith, Mitsman, Nik, SEAHAWKS!
+Beau's, Wiet, TenTen10, nicolekc, Purple Peopl, Stupit Picks, caron, Nik, Habolos, Kim E
+SEAHAWKS!, Habolos, Wiet, TenTen10, peteschaf, Purple Peopl, Daniel Monto, winthatdough, King, caron
+caron, Meredith, Stupit Picks, Wiet, TenTen10, SEAHAWKS!, Purple Peopl, King, Mama Petie, Wsnider
+peteschaf, nicolekc, Tina, Purple Peopl, Wiet, TenTen10, The Blaz, nicolekc, Mama Petie, Poppy
+winthatdough, Mitsman, The Blaz, Purple Peopl, King, Wiet, TenTen10, Habolos, SEAHAWKS!, Poppy
+Mitsman, Beau's, Habolos, The Blaz, Jodi, King, Mama Petie, Meredith, Smash, Nik
+Tasha, Kim E, SEAHAWKS!, nicolekc, Stupit Picks, The Blaz, winthatdough, Beau's, Smash, Nik
+Habolos, Ron O., Beau's, King, Mitsman, Steve H, The Blaz, nicolekc, Meredith, Mama Petie
+Smash, Nik, Meredith, caron, Steve H, Tasha, peteschaf, BroncosMom, Poppy, Poppy`;
+
 // ── Initialize ────────────────────────────────────────────────────────
 
 function init(): void {
+  // Load from localStorage if available, otherwise use default boards
+  const saved = loadFromLocalStorage();
+  if (saved) {
+    try {
+      boards = parseBoards(saved);
+      activeTab = 'scoring';
+    } catch {
+      // Fall through to defaults
+    }
+  }
+  if (boards.length === 0) {
+    boards = parseBoards(DEFAULT_BOARDS);
+    saveToLocalStorage();
+    activeTab = 'scoring';
+  }
+  loadGameState();
   render();
 }
 

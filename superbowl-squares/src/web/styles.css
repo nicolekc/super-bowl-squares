@@ -296,6 +296,167 @@ body {
   color: var(--muted);
 }
 
+/* ── Past Quarter Winners ─────────────────────────────── */
+
+.past-winners {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.past-winners-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.past-winners-quarter {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.375rem 0;
+  flex-wrap: wrap;
+}
+
+.past-winners-quarter + .past-winners-quarter {
+  border-top: 1px solid var(--border);
+}
+
+.pw-label {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text);
+  min-width: 3rem;
+}
+
+.pw-score {
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  min-width: 8rem;
+}
+
+.pw-winner {
+  font-size: 0.8125rem;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.5rem;
+}
+
+.pw-mine {
+  color: var(--win);
+  font-weight: 600;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+/* ── Digit Summary ────────────────────────────────────── */
+
+.digit-summary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.digit-summary-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+.digit-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 1.5rem;
+}
+
+.digit-summary-board {
+  flex: 0 0 auto;
+}
+
+.digit-summary-board.has-winner {
+  border-left: 3px solid var(--win);
+  padding-left: 0.75rem;
+}
+
+.digit-summary-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0;
+}
+
+.digit-summary-detail {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.digit-summary-status {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.digit-summary-status.winner {
+  color: var(--win);
+}
+
+.digit-summary-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.digit-summary-pair {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.digit-summary-pair.pair-hit {
+  color: var(--win);
+  font-weight: 700;
+}
+
+.ds-team {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  min-width: 2rem;
+}
+
+.pair-hit .ds-team {
+  color: var(--win);
+}
+
+.ds-sep {
+  color: var(--border);
+  font-size: 0.75rem;
+}
+
+.ds-digit {
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.pair-hit .ds-digit {
+  color: var(--win);
+}
+
 /* ── Board Card ────────────────────────────────────────── */
 
 .board-card {
@@ -351,6 +512,35 @@ body {
 
 .grid-table th.corner {
   background: var(--bg);
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.2;
+  padding: 0.25rem;
+  white-space: normal;
+  text-align: center;
+}
+
+.grid-table .team-label-top {
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  border: none;
+  padding: 0.125rem 0;
+}
+
+.grid-table .team-label-left {
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  border: none;
+  padding: 0 0.125rem;
 }
 
 .grid-table td {
@@ -374,14 +564,20 @@ body {
   color: var(--near) !important;
 }
 
-.grid-table td.cell-mine {
+.cell-mine {
   font-weight: 700 !important;
   text-decoration: underline;
-  background: rgba(255, 255, 255, 0.10) !important;
-  outline: 2.5px solid rgba(255, 255, 255, 0.25) !important;
-  outline-offset: -1px;
-  position: relative;
-  z-index: 1;
+}
+
+.cell-clickable {
+  cursor: pointer;
+  user-select: none;
+  transition: outline 0.1s;
+}
+
+.cell-clickable:hover {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 /* ── Status text rows ──────────────────────────────────── */
@@ -644,5 +840,17 @@ textarea::placeholder {
   .restore-bar {
     flex-direction: column;
     text-align: center;
+  }
+
+  .digit-summary {
+    padding: 0.75rem;
+  }
+
+  .digit-summary-grid {
+    gap: 0.75rem;
+  }
+
+  .digit-summary-board {
+    flex: 0 0 100%;
   }
 }
