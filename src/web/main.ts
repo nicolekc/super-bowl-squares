@@ -1233,8 +1233,8 @@ function init(): void {
   const defaultsHash = simpleHash(DEFAULT_BOARDS);
   const savedHash = localStorage.getItem(LS_DEFAULTS_HASH_KEY);
 
-  // If the default boards data changed, reload defaults but keep game state
-  if (savedHash !== null && savedHash !== defaultsHash) {
+  // If the default boards data changed (or hash not yet stored), reload defaults but keep game state
+  if (savedHash !== defaultsHash) {
     boards = parseBoards(DEFAULT_BOARDS);
     saveToLocalStorage();
     localStorage.setItem(LS_DEFAULTS_HASH_KEY, defaultsHash);
