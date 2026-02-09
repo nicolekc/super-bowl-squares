@@ -177,6 +177,23 @@ Patriots 0, Seahawks 7`;
     const board = parseSingleBoard(input);
     expect(board.config.payouts).toEqual([100, 250, 100, 250]);
   });
+
+  it('parses payouts on full board', () => {
+    const input = `Pool $25 5x5 full
+Patriots (top) vs Seahawks (left)
+Payouts 50 100 50 200
+Top Patriots 03 19 28 46 57
+Left Seahawks 65 12 39 47 80
+A, B, C, D, E
+F, G, H, I, J
+K, L, M, N, O
+P, Q, R, S, T
+U, V, W, X, Y`;
+
+    const board = parseSingleBoard(input);
+    expect(board.config.payouts).toEqual([50, 100, 50, 200]);
+    expect(board.fullBoard).toBeDefined();
+  });
 });
 
 // ── parseSingleBoard: my-squares reroll ─────────────────
